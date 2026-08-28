@@ -4,7 +4,7 @@ export const dynamic = "force-static";
 
 export default function robots(): MetadataRoute.Robots {
   const baseUrl =
-    "https://shenghung-ken.github.io/titanium-it";
+    "https://titaniumit.rweb.site";
 
   return {
     rules: [

@@ -19,14 +19,22 @@ import {
   getSupabaseClient,
 } from "@/lib/supabase";
 
-const ADMIN_EMAIL =
-  "kevin7206160616@gmail.com";
+function isAdmin(
+  appMetadata:
+    | Record<string, unknown>
+    | undefined,
+): boolean {
+  return (
+    appMetadata?.role ===
+    "admin"
+  );
+}
 
 export default function LoginPage() {
   const router = useRouter();
 
   const [email, setEmail] =
-    useState(ADMIN_EMAIL);
+    useState("");
 
   const [password, setPassword] =
     useState("");
@@ -55,25 +63,38 @@ export default function LoginPage() {
         getSupabaseClient();
 
       if (!supabase) {
-        setConfigurationError(true);
-        setCheckingSession(false);
+        setConfigurationError(
+          true,
+        );
+
+        setCheckingSession(
+          false,
+        );
+
         return;
       }
 
       const {
-        data: { session },
+        data: { user },
       } =
-        await supabase.auth.getSession();
+        await supabase.auth.getUser();
 
       if (
-        session?.user.email ===
-        ADMIN_EMAIL
+        user &&
+        isAdmin(
+          user.app_metadata,
+        )
       ) {
-        router.replace("/admin");
+        router.replace(
+          "/admin",
+        );
+
         return;
       }
 
-      setCheckingSession(false);
+      setCheckingSession(
+        false,
+      );
     }
 
     checkSession();
@@ -88,7 +109,10 @@ export default function LoginPage() {
       getSupabaseClient();
 
     if (!supabase) {
-      setConfigurationError(true);
+      setConfigurationError(
+        true,
+      );
+
       return;
     }
 
@@ -99,10 +123,13 @@ export default function LoginPage() {
       data,
       error,
     } =
-      await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
+      await supabase.auth.signInWithPassword(
+        {
+          email:
+            email.trim(),
+          password,
+        },
+      );
 
     if (error) {
       setLoading(false);
@@ -115,8 +142,11 @@ export default function LoginPage() {
     }
 
     if (
-      data.user?.email !==
-      ADMIN_EMAIL
+      !data.user ||
+      !isAdmin(
+        data.user
+          .app_metadata,
+      )
     ) {
       await supabase.auth.signOut();
 
@@ -131,7 +161,9 @@ export default function LoginPage() {
 
     setLoading(false);
 
-    router.replace("/admin");
+    router.replace(
+      "/admin",
+    );
   }
 
   if (checkingSession) {
@@ -156,7 +188,7 @@ export default function LoginPage() {
         <div className="mb-8 text-center">
           <div className="overflow-hidden rounded-2xl bg-black/30 p-3">
             <Image
-              src="/titanium-it/logo-titanium.png"
+              src="/logo-titanium.png"
               alt="鈦鼎資訊"
               width={700}
               height={400}
@@ -190,7 +222,9 @@ export default function LoginPage() {
         )}
 
         <form
-          onSubmit={handleLogin}
+          onSubmit={
+            handleLogin
+          }
           className="space-y-5"
         >
           <div>
@@ -204,14 +238,24 @@ export default function LoginPage() {
               <input
                 type="email"
                 required
-                value={email}
-                onChange={(event) =>
+                value={
+                  email
+                }
+                onChange={(
+                  event,
+                ) =>
                   setEmail(
-                    event.target.value,
+                    event
+                      .target
+                      .value,
                   )
                 }
                 className="login-input pl-12"
                 autoComplete="username"
+                placeholder="請輸入管理員 Email"
+                disabled={
+                  configurationError
+                }
               />
             </div>
           </div>
@@ -227,10 +271,16 @@ export default function LoginPage() {
               <input
                 type="password"
                 required
-                value={password}
-                onChange={(event) =>
+                value={
+                  password
+                }
+                onChange={(
+                  event,
+                ) =>
                   setPassword(
-                    event.target.value,
+                    event
+                      .target
+                      .value,
                   )
                 }
                 className="login-input pl-12"
@@ -245,7 +295,9 @@ export default function LoginPage() {
 
           {errorMessage && (
             <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300">
-              {errorMessage}
+              {
+                errorMessage
+              }
             </div>
           )}
 

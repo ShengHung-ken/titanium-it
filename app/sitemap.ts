@@ -4,7 +4,7 @@ export const dynamic = "force-static";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const baseUrl =
-    "https://shenghung-ken.github.io/titanium-it";
+    "https://titaniumit.rweb.site";
 
   return [
     {

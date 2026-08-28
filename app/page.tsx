@@ -10,6 +10,7 @@ import Link from "next/link";
 
 import {
   Cpu,
+  ExternalLink,
   HardDrive,
   Laptop,
   Mail,
@@ -73,6 +74,9 @@ const LINE_ADD_FRIEND_URL =
 
 const LINE_QR_CODE_URL =
   "https://qr-official.line.me/gs/M_068wtdkw_GW.png?oat_content=qr";
+
+const FACEBOOK_PAGE_URL =
+  "https://www.facebook.com/titaniumit.tw";
 
 const CONTACT_EMAIL =
   "kevin7206160616@gmail.com";
@@ -186,14 +190,14 @@ export default function HomePage() {
               closeMobileMenu
             }
           >
-            <div className="flex h-14 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-black/30">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-black/30">
               <Image
-                src="/titanium-it/logo-titanium.png"
+                src="/logo-shield.png"
                 alt="鈦鼎資訊"
-                width={80}
-                height={55}
+                width={56}
+                height={56}
                 priority
-                className="h-full w-full object-contain"
+                className="h-full w-full object-cover"
               />
             </div>
 
@@ -362,7 +366,7 @@ export default function HomePage() {
 
                 <div className="col-span-full flex min-h-[280px] items-center justify-center overflow-hidden rounded-3xl border border-white/10 bg-black/30 p-4">
                   <Image
-                    src="/titanium-it/logo-titanium.png"
+                    src="/logo-titanium.png"
                     alt="鈦鼎資訊 Titanium IT"
                     width={800}
                     height={450}
@@ -671,6 +675,18 @@ export default function HomePage() {
               >
                 <MessageCircle className="mr-2 h-5 w-5" />
                 加入 LINE 官方帳號
+              </a>
+
+              <a
+                href={
+                  FACEBOOK_PAGE_URL
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-flex items-center justify-center rounded-xl bg-[#1877f2] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#166fe5]"
+              >
+                <ExternalLink className="mr-2 h-5 w-5" />
+                Facebook 粉絲專頁
               </a>
             </div>
 

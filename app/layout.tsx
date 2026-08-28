@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 const siteUrl =
-  "https://shenghung-ken.github.io/titanium-it/";
+  "https://titaniumit.rweb.site/";
 
 const siteName =
   "鈦鼎資訊 | Titanium IT";
@@ -11,7 +11,13 @@ const siteDescription =
   "鈦鼎資訊提供電腦維修、客製化組裝、硬體升級、系統重灌、零組件、筆電與周邊設備服務。";
 
 const logoUrl =
-  "https://shenghung-ken.github.io/titanium-it/logo-titanium.png";
+  "https://titaniumit.rweb.site/logo-titanium.png";
+
+const facebookUrl =
+  "https://www.facebook.com/titaniumit.tw";
+
+const lineUrl =
+  "https://lin.ee/PC2w13i";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -161,7 +167,8 @@ const structuredData = [
     },
 
     sameAs: [
-      "https://lin.ee/PC2w13i",
+      facebookUrl,
+      lineUrl,
     ],
   },
 

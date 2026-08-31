@@ -1,8 +1,18 @@
 import { getSupabaseClient } from "@/lib/supabase";
 import type {
   Product,
+  ProductImage,
   ProductStatus,
 } from "@/lib/products";
+
+interface ProductImageRow {
+  id: number;
+  product_id: number;
+  image_url: string;
+  storage_path: string | null;
+  sort_order: number;
+  is_cover: boolean;
+}
 
 interface ProductRow {
   id: number;
@@ -15,6 +25,7 @@ interface ProductRow {
   image_url: string | null;
   created_at: string;
   updated_at: string;
+  product_images?: ProductImageRow[] | null;
 }
 
 export interface ProductInput {
@@ -27,9 +38,37 @@ export interface ProductInput {
   imageUrl?: string;
 }
 
+function mapProductImageRow(
+  row: ProductImageRow,
+): ProductImage {
+  return {
+    id: row.id,
+    productId: row.product_id,
+    imageUrl: row.image_url,
+    storagePath:
+      row.storage_path ?? undefined,
+    sortOrder: row.sort_order,
+    isCover: row.is_cover,
+  };
+}
+
 function mapProductRow(
   row: ProductRow,
 ): Product {
+  const images = (
+    row.product_images ?? []
+  )
+    .map(mapProductImageRow)
+    .sort(
+      (a, b) =>
+        a.sortOrder - b.sortOrder,
+    );
+
+  const coverImage =
+    images.find(
+      (image) => image.isCover,
+    ) ?? images[0];
+
   return {
     id: row.id,
     name: row.name,
@@ -37,8 +76,22 @@ function mapProductRow(
     price: row.price,
     stock: row.stock,
     status: row.status,
-    description: row.description ?? [],
-    imageUrl: row.image_url ?? undefined,
+    description:
+      row.description ?? [],
+
+    /**
+     * 保留舊版 imageUrl，
+     * 讓目前前台與後台可以繼續運作。
+     *
+     * 優先使用新版 product_images 的封面，
+     * 若沒有新版圖片才使用舊 image_url。
+     */
+    imageUrl:
+      coverImage?.imageUrl ??
+      row.image_url ??
+      undefined,
+
+    images,
   };
 }
 
@@ -48,7 +101,7 @@ function requireSupabase() {
 
   if (!supabase) {
     throw new Error(
-      "尚未完成 Supabase 設定。",
+      "尚未設定 Supabase 連線資訊。",
     );
   }
 
@@ -56,11 +109,11 @@ function requireSupabase() {
 }
 
 /**
- * 前台使用：
- * 只取得「上架」商品。
+ * 讀取前台公開商品。
  *
- * RLS 本身也會限制一般訪客
- * 只能讀取上架商品。
+ * products 的 RLS 只允許讀取上架商品。
+ * product_images 的 RLS 只允許一般訪客
+ * 讀取上架商品所屬的圖片。
  */
 export async function fetchPublicProducts(): Promise<
   Product[]
@@ -73,7 +126,19 @@ export async function fetchPublicProducts(): Promise<
     error,
   } = await supabase
     .from("products")
-    .select("*")
+    .select(
+      `
+        *,
+        product_images (
+          id,
+          product_id,
+          image_url,
+          storage_path,
+          sort_order,
+          is_cover
+        )
+      `,
+    )
     .eq("status", "上架")
     .order("created_at", {
       ascending: false,
@@ -81,7 +146,7 @@ export async function fetchPublicProducts(): Promise<
 
   if (error) {
     throw new Error(
-      `讀取商品失敗：${error.message}`,
+      `讀取公開商品失敗：${error.message}`,
     );
   }
 
@@ -92,9 +157,10 @@ export async function fetchPublicProducts(): Promise<
 }
 
 /**
- * 後台使用：
- * 管理員登入後取得全部商品，
- * 包含上架與下架。
+ * 讀取管理員商品。
+ *
+ * Admin 可以透過 RLS 讀取所有商品，
+ * 包含上架與下架商品，以及所有商品圖片。
  */
 export async function fetchAdminProducts(): Promise<
   Product[]
@@ -107,14 +173,26 @@ export async function fetchAdminProducts(): Promise<
     error,
   } = await supabase
     .from("products")
-    .select("*")
+    .select(
+      `
+        *,
+        product_images (
+          id,
+          product_id,
+          image_url,
+          storage_path,
+          sort_order,
+          is_cover
+        )
+      `,
+    )
     .order("created_at", {
       ascending: false,
     });
 
   if (error) {
     throw new Error(
-      `讀取後台商品失敗：${error.message}`,
+      `讀取管理員商品失敗：${error.message}`,
     );
   }
 
@@ -126,6 +204,9 @@ export async function fetchAdminProducts(): Promise<
 
 /**
  * 新增商品。
+ *
+ * 目前仍保留 products.image_url，
+ * 在多圖片上傳功能完成前維持舊版相容性。
  */
 export async function createProduct(
   input: ProductInput,
@@ -165,6 +246,9 @@ export async function createProduct(
 
 /**
  * 修改商品。
+ *
+ * products.image_url 暫時保留，
+ * 等多圖片功能完整切換後再決定是否移除。
  */
 export async function updateProduct(
   id: number,
@@ -205,7 +289,7 @@ export async function updateProduct(
 }
 
 /**
- * 快速切換商品上下架。
+ * 更新商品上架 / 下架狀態。
  */
 export async function updateProductStatus(
   id: number,
@@ -238,11 +322,15 @@ export async function updateProductStatus(
 }
 
 /**
- * 刪除商品資料。
+ * 刪除商品。
  *
- * 目前只刪除 Database 記錄。
- * 商品圖片會在下一階段一起處理，
- * 避免 Storage 留下孤兒檔案。
+ * product_images.product_id 已設定
+ * ON DELETE CASCADE，
+ * 因此刪除 products 資料後，
+ * product_images 的資料列會一起刪除。
+ *
+ * Supabase Storage 中的實體圖片檔，
+ * 仍需要由商品圖片刪除流程另外處理。
  */
 export async function deleteProduct(
   id: number,

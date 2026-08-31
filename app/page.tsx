@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useMemo,
   useState,
 } from "react";
 
@@ -23,10 +24,6 @@ import {
   X,
 } from "lucide-react";
 
-import {
-  services,
-} from "@/lib/data";
-
 import type {
   Product,
 } from "@/lib/products";
@@ -35,51 +32,25 @@ import {
   fetchPublicProducts,
 } from "@/lib/supabase-products";
 
-const serviceIcons = [
-  Laptop,
-  Cpu,
-  HardDrive,
-  ShoppingCart,
-  ShieldCheck,
-  Wrench,
-  Monitor,
-  Cpu,
-];
+import {
+  DEFAULT_SITE_SERVICES,
+  DEFAULT_SITE_SETTINGS,
+  fetchPublicSiteContent,
+  type SiteService,
+  type SiteSettings,
+} from "@/lib/site-content";
 
-const navigationItems = [
-  {
-    label: "首頁",
-    href: "#home",
-  },
-  {
-    label: "商品專區",
-    href: "#products",
-  },
-  {
-    label: "服務項目",
-    href: "#services",
-  },
-  {
-    label: "關於我們",
-    href: "#about",
-  },
-  {
-    label: "聯絡我們",
-    href: "#contact",
-  },
-];
-
-const LINE_ADD_FRIEND_URL =
-  "https://lin.ee/PC2w13i";
-
-const LINE_QR_CODE_URL =
-  "https://qr-official.line.me/gs/M_068wtdkw_GW.png?oat_content=qr";
-
-const FACEBOOK_PAGE_URL =
-  "https://www.facebook.com/titaniumit.tw";
-
-const CONTACT_EMAIL =
-  "kevin7206160616@gmail.com";
+const serviceIconMap = {
+  laptop: Laptop,
+  cpu: Cpu,
+  "hard-drive": HardDrive,
+  "shopping-cart":
+    ShoppingCart,
+  "shield-check":
+    ShieldCheck,
+  wrench: Wrench,
+  monitor: Monitor,
+};
 
 function formatPrice(
   price: number,
@@ -121,10 +92,77 @@ export default function HomePage() {
     setMobileMenuOpen,
   ] = useState(false);
 
+  const [
+    siteSettings,
+    setSiteSettings,
+  ] = useState<SiteSettings>(
+    () => ({
+      ...DEFAULT_SITE_SETTINGS,
+    }),
+  );
+
+  const [
+    siteServices,
+    setSiteServices,
+  ] = useState<SiteService[]>(
+    () =>
+      DEFAULT_SITE_SERVICES.map(
+        (service) => ({
+          ...service,
+        }),
+      ),
+  );
+
+  const navigationItems =
+    useMemo(
+      () => [
+        {
+          label:
+            siteSettings.nav_home,
+          href: "#home",
+        },
+        {
+          label:
+            siteSettings.nav_products,
+          href: "#products",
+        },
+        {
+          label:
+            siteSettings.nav_services,
+          href: "#services",
+        },
+        {
+          label:
+            siteSettings.nav_about,
+          href: "#about",
+        },
+        {
+          label:
+            siteSettings.nav_contact,
+          href: "#contact",
+        },
+      ],
+      [siteSettings],
+    );
+
+  const aboutFeatures =
+    useMemo(
+      () => [
+        siteSettings.about_feature_1,
+        siteSettings.about_feature_2,
+        siteSettings.about_feature_3,
+        siteSettings.about_feature_4,
+      ],
+      [siteSettings],
+    );
+
   useEffect(() => {
     async function loadProducts() {
       try {
-        setProductsLoading(true);
+        setProductsLoading(
+          true,
+        );
+
         setProductsError("");
 
         const currentProducts =
@@ -146,7 +184,9 @@ export default function HomePage() {
           ),
         );
       } finally {
-        setProductsLoading(false);
+        setProductsLoading(
+          false,
+        );
       }
     }
 
@@ -154,11 +194,44 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    async function loadSiteContent() {
+      try {
+        const content =
+          await fetchPublicSiteContent();
+
+        setSiteSettings(
+          content.settings,
+        );
+
+        setSiteServices(
+          content.services,
+        );
+      } catch (error) {
+        /*
+         * CMS 讀取失敗時，
+         * 保留 DEFAULT_SITE_SETTINGS
+         * 與 DEFAULT_SITE_SERVICES，
+         * 避免首頁內容消失。
+         */
+        console.error(
+          "讀取網站 CMS 內容失敗：",
+          error,
+        );
+      }
+    }
+
+    loadSiteContent();
+  }, []);
+
+  useEffect(() => {
     function handleResize() {
       if (
-        window.innerWidth >= 1024
+        window.innerWidth >=
+        1024
       ) {
-        setMobileMenuOpen(false);
+        setMobileMenuOpen(
+          false,
+        );
       }
     }
 
@@ -192,8 +265,12 @@ export default function HomePage() {
           >
             <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-black/30">
               <Image
-                src="/logo-shield.png"
-                alt="鈦鼎資訊"
+                src={
+                  siteSettings.brand_logo_shield
+                }
+                alt={
+                  siteSettings.brand_name
+                }
                 width={56}
                 height={56}
                 priority
@@ -203,11 +280,15 @@ export default function HomePage() {
 
             <div className="min-w-0">
               <div className="whitespace-nowrap text-lg font-black tracking-[0.12em] sm:text-xl sm:tracking-[0.15em]">
-                鈦鼎資訊
+                {
+                  siteSettings.brand_name
+                }
               </div>
 
               <div className="whitespace-nowrap text-[10px] tracking-[0.16em] text-slate-400 sm:text-xs sm:tracking-[0.2em]">
-                TITANIUM IT
+                {
+                  siteSettings.brand_name_en
+                }
               </div>
             </div>
           </Link>
@@ -293,25 +374,38 @@ export default function HomePage() {
         <div className="mx-auto grid min-h-[620px] max-w-7xl items-center gap-12 px-5 py-16 lg:grid-cols-2">
           <div>
             <div className="mb-5 inline-flex rounded-full border border-blue-400/30 bg-blue-500/10 px-4 py-2 text-sm text-blue-300">
-              鈦鼎資訊・專業電腦服務
+              {
+                siteSettings.hero_badge
+              }
             </div>
 
             <h1 className="max-w-3xl text-4xl font-black leading-tight sm:text-5xl lg:text-6xl">
-              專業維修
+              {
+                siteSettings.hero_title_before
+              }
+
               <span className="text-blue-400">
                 {" "}
-                ×{" "}
+                {
+                  siteSettings.hero_title_accent
+                }{" "}
               </span>
-              組裝升級
+
+              {
+                siteSettings.hero_title_after
+              }
             </h1>
 
             <p className="mt-5 text-xl tracking-wider text-slate-300">
-              快速・專業・誠信・在地服務
+              {
+                siteSettings.hero_subtitle
+              }
             </p>
 
             <p className="mt-6 max-w-xl leading-8 text-slate-400">
-              提供桌機、筆電維修、客製化電腦組裝、
-              系統重灌、零組件升級、監控設備與到府服務。
+              {
+                siteSettings.hero_description
+              }
             </p>
 
             <div className="mt-8 flex flex-wrap gap-4">
@@ -319,14 +413,18 @@ export default function HomePage() {
                 href="#products"
                 className="primary-button"
               >
-                瀏覽商品
+                {
+                  siteSettings.hero_products_button
+                }
               </a>
 
               <a
                 href="#contact"
                 className="secondary-button"
               >
-                聯絡我們
+                {
+                  siteSettings.hero_contact_button
+                }
               </a>
             </div>
           </div>
@@ -341,11 +439,15 @@ export default function HomePage() {
 
                   <div>
                     <div className="text-2xl font-black">
-                      客製電競主機
+                      {
+                        siteSettings.hero_card_1_title
+                      }
                     </div>
 
                     <div className="mt-2 text-sm text-slate-400">
-                      依照預算與需求搭配
+                      {
+                        siteSettings.hero_card_1_description
+                      }
                     </div>
                   </div>
                 </div>
@@ -355,19 +457,25 @@ export default function HomePage() {
 
                   <div>
                     <div className="text-2xl font-black">
-                      筆電維修
+                      {
+                        siteSettings.hero_card_2_title
+                      }
                     </div>
 
                     <div className="mt-2 text-sm text-slate-400">
-                      快速檢測・專業維修
+                      {
+                        siteSettings.hero_card_2_description
+                      }
                     </div>
                   </div>
                 </div>
 
                 <div className="col-span-full flex min-h-[280px] items-center justify-center overflow-hidden rounded-3xl border border-white/10 bg-black/30 p-4">
                   <Image
-                    src="/logo-titanium.png"
-                    alt="鈦鼎資訊 Titanium IT"
+                    src={
+                      siteSettings.brand_logo_main
+                    }
+                    alt={`${siteSettings.brand_name} ${siteSettings.brand_name_en}`}
                     width={800}
                     height={450}
                     className="h-auto max-h-[300px] w-full object-contain"
@@ -386,29 +494,31 @@ export default function HomePage() {
       >
         <div className="mb-10">
           <p className="text-sm font-bold tracking-widest text-blue-400">
-            SERVICES
+            {
+              siteSettings.services_eyebrow
+            }
           </p>
 
           <h2 className="mt-2 text-4xl font-black">
-            專業服務
+            {
+              siteSettings.services_title
+            }
           </h2>
         </div>
 
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {services.map(
-            (
-              service,
-              index,
-            ) => {
+          {siteServices.map(
+            (service) => {
               const Icon =
-                serviceIcons[
-                  index
-                ] ?? Wrench;
+                serviceIconMap[
+                  service.iconKey as keyof typeof serviceIconMap
+                ] ??
+                Wrench;
 
               return (
                 <article
                   key={
-                    service.title
+                    service.id
                   }
                   className="glass-panel rounded-3xl p-6 transition duration-200 hover:-translate-y-1 hover:border-blue-400/40"
                 >
@@ -441,26 +551,36 @@ export default function HomePage() {
         <div className="mx-auto max-w-7xl px-5">
           <div className="mb-10">
             <p className="text-sm font-bold tracking-widest text-blue-600">
-              PRODUCTS
+              {
+                siteSettings.products_eyebrow
+              }
             </p>
 
             <h2 className="mt-2 text-4xl font-black">
-              熱門商品
+              {
+                siteSettings.products_title
+              }
             </h2>
 
             <p className="mt-3 text-sm text-slate-500">
-              商品內容由鈦鼎資訊後台即時管理
+              {
+                siteSettings.products_description
+              }
             </p>
           </div>
 
           {productsLoading && (
             <div className="rounded-3xl border border-slate-200 bg-white p-12 text-center">
               <div className="text-lg font-bold text-slate-700">
-                商品讀取中...
+                {
+                  siteSettings.products_loading_title
+                }
               </div>
 
               <p className="mt-2 text-sm text-slate-400">
-                正在連線至商品資料庫
+                {
+                  siteSettings.products_loading_description
+                }
               </p>
             </div>
           )}
@@ -469,7 +589,9 @@ export default function HomePage() {
             productsError && (
               <div className="rounded-3xl border border-red-200 bg-red-50 p-8 text-center">
                 <div className="font-bold text-red-700">
-                  商品資料暫時無法讀取
+                  {
+                    siteSettings.products_error_title
+                  }
                 </div>
 
                 <p className="mt-2 text-sm text-red-500">
@@ -485,7 +607,9 @@ export default function HomePage() {
             products.length ===
               0 && (
               <div className="rounded-3xl border border-slate-200 bg-white p-12 text-center text-slate-500">
-                目前尚無上架商品
+                {
+                  siteSettings.products_empty
+                }
               </div>
             )}
 
@@ -551,7 +675,10 @@ export default function HomePage() {
                         </ul>
 
                         <div className="mt-4 text-sm text-slate-400">
-                          庫存：
+                          {
+                            siteSettings.products_stock_label
+                          }
+                          ：
                           {
                             product.stock
                           }
@@ -568,7 +695,9 @@ export default function HomePage() {
                           href="#contact"
                           className="mt-4 block w-full rounded-xl bg-slate-950 py-3 text-center text-sm font-bold text-white transition hover:bg-blue-600"
                         >
-                          詢問商品
+                          {
+                            siteSettings.products_inquiry_button
+                          }
                         </a>
                       </div>
                     </article>
@@ -586,32 +715,32 @@ export default function HomePage() {
         <div className="glass-panel grid gap-10 rounded-[2rem] p-7 md:p-10 lg:grid-cols-2">
           <div>
             <p className="text-sm font-bold tracking-widest text-blue-400">
-              ABOUT US
+              {
+                siteSettings.about_eyebrow
+              }
             </p>
 
             <h2 className="mt-3 text-4xl font-black">
-              關於鈦鼎資訊
+              {
+                siteSettings.about_title
+              }
             </h2>
 
             <p className="mt-6 leading-8 text-slate-400">
-              鈦鼎資訊以專業技術、透明報價與在地服務為核心，
-              提供電腦維修、升級、組裝與周邊設備服務。
+              {
+                siteSettings.about_description_1
+              }
             </p>
 
             <p className="mt-4 leading-8 text-slate-400">
-              無論是桌上型電腦、筆記型電腦、
-              零組件升級、系統問題或設備規劃，
-              都歡迎與我們聯絡。
+              {
+                siteSettings.about_description_2
+              }
             </p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            {[
-              "專業技術",
-              "透明報價",
-              "快速維修",
-              "售後服務",
-            ].map(
+            {aboutFeatures.map(
               (item) => (
                 <div
                   key={item}
@@ -635,11 +764,15 @@ export default function HomePage() {
       >
         <div className="mx-auto max-w-7xl px-5">
           <h2 className="text-center text-4xl font-black">
-            聯絡鈦鼎資訊
+            {
+              siteSettings.contact_title
+            }
           </h2>
 
           <p className="mt-3 text-center text-slate-400">
-            維修、組裝、升級及商品問題歡迎洽詢
+            {
+              siteSettings.contact_description
+            }
           </p>
 
           <div className="mx-auto mt-10 grid max-w-5xl gap-5 md:grid-cols-3">
@@ -647,67 +780,80 @@ export default function HomePage() {
               <MessageCircle className="mx-auto h-9 w-9 text-green-400" />
 
               <h3 className="mt-4 text-xl font-black">
-                LINE 官方帳號
+                {
+                  siteSettings.contact_line_title
+                }
               </h3>
 
               <div className="mx-auto mt-5 max-w-[220px] overflow-hidden rounded-2xl bg-white p-3">
                 <img
                   src={
-                    LINE_QR_CODE_URL
+                    siteSettings.line_qr_code_url
                   }
-                  alt="鈦鼎資訊 LINE 官方帳號 QR Code"
+                  alt={`${siteSettings.brand_name} LINE 官方帳號 QR Code`}
                   className="h-auto w-full"
                 />
               </div>
 
               <p className="mt-4 text-sm leading-6 text-slate-400">
-                掃描 QR Code，
-                或直接點擊下方按鈕加入 LINE 官方帳號
+                {
+                  siteSettings.contact_line_description
+                }
               </p>
 
               <a
                 href={
-                  LINE_ADD_FRIEND_URL
+                  siteSettings.line_add_friend_url
                 }
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-5 inline-flex items-center justify-center rounded-xl bg-[#06c755] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#05b94f]"
               >
                 <MessageCircle className="mr-2 h-5 w-5" />
-                加入 LINE 官方帳號
+
+                {
+                  siteSettings.contact_line_button
+                }
               </a>
 
               <a
                 href={
-                  FACEBOOK_PAGE_URL
+                  siteSettings.facebook_page_url
                 }
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-3 inline-flex items-center justify-center rounded-xl bg-[#1877f2] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#166fe5]"
               >
                 <ExternalLink className="mr-2 h-5 w-5" />
-                Facebook 粉絲專頁
+
+                {
+                  siteSettings.contact_facebook_button
+                }
               </a>
             </div>
 
             <a
-              href={`mailto:${CONTACT_EMAIL}`}
+              href={`mailto:${siteSettings.contact_email}`}
               className="glass-panel rounded-3xl p-6 text-center transition hover:border-blue-400/40"
             >
               <Mail className="mx-auto h-9 w-9 text-blue-400" />
 
               <h3 className="mt-4 text-xl font-black">
-                聯絡 Email
+                {
+                  siteSettings.contact_email_title
+                }
               </h3>
 
               <p className="mt-2 break-all text-slate-400">
                 {
-                  CONTACT_EMAIL
+                  siteSettings.contact_email
                 }
               </p>
 
               <div className="mt-6 inline-flex rounded-xl bg-blue-500/10 px-5 py-3 text-sm font-semibold text-blue-300">
-                寄送 Email
+                {
+                  siteSettings.contact_email_button
+                }
               </div>
             </a>
 
@@ -715,25 +861,30 @@ export default function HomePage() {
               <Wrench className="mx-auto h-9 w-9 text-purple-400" />
 
               <h3 className="mt-4 text-xl font-black">
-                維修 / 商品諮詢
+                {
+                  siteSettings.contact_service_title
+                }
               </h3>
 
               <p className="mt-3 leading-7 text-slate-400">
-                電腦維修、客製化組裝、
-                系統升級、零組件及商品相關問題，
-                歡迎透過 LINE 或 Email 聯絡。
+                {
+                  siteSettings.contact_service_description
+                }
               </p>
 
               <a
                 href={
-                  LINE_ADD_FRIEND_URL
+                  siteSettings.line_add_friend_url
                 }
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-5 inline-flex items-center justify-center rounded-xl border border-green-500/30 bg-green-500/10 px-5 py-3 text-sm font-bold text-green-300 transition hover:bg-green-500/20"
               >
                 <MessageCircle className="mr-2 h-5 w-5" />
-                LINE 詢問
+
+                {
+                  siteSettings.contact_service_button
+                }
               </a>
             </div>
           </div>
@@ -743,7 +894,9 @@ export default function HomePage() {
       <footer className="border-t border-white/10 px-5 py-8 text-center text-sm text-slate-500">
         ©{" "}
         {new Date().getFullYear()}{" "}
-        鈦鼎資訊 TITANIUM IT
+        {
+          siteSettings.footer_brand
+        }
       </footer>
     </main>
   );

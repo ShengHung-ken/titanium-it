@@ -13,10 +13,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import {
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
   Boxes,
   ChevronLeft,
   ChevronRight,
+  FileText,
   ImagePlus,
   LogOut,
   Pencil,
@@ -24,6 +27,7 @@ import {
   Save,
   Star,
   Trash2,
+  Wrench,
   X,
 } from "lucide-react";
 
@@ -67,6 +71,28 @@ import {
   getSupabaseClient,
 } from "@/lib/supabase";
 
+import type {
+  SiteService,
+  SiteSettingKey,
+} from "@/lib/site-content";
+
+import {
+  createSiteService,
+  deleteSiteService,
+  fetchAdminSiteServices,
+  fetchAdminSiteSettings,
+  type AdminSiteSetting,
+  type SiteServiceInput,
+  updateSiteService,
+  updateSiteServiceOrder,
+  updateSiteSettings,
+} from "@/lib/supabase-site-content";
+
+type AdminSection =
+  | "products"
+  | "content"
+  | "services";
+
 interface ProductFormState {
   name: string;
   category: string;
@@ -84,6 +110,13 @@ interface PendingImage {
   compressedSize: number;
 }
 
+interface SiteServiceFormState {
+  title: string;
+  description: string;
+  iconKey: string;
+  isEnabled: boolean;
+}
+
 const INITIAL_FORM: ProductFormState = {
   name: "",
   category: "",
@@ -92,6 +125,71 @@ const INITIAL_FORM: ProductFormState = {
   status: "上架",
   description: "",
 };
+
+const INITIAL_SERVICE_FORM: SiteServiceFormState = {
+  title: "",
+  description: "",
+  iconKey: "wrench",
+  isEnabled: true,
+};
+
+const SITE_GROUP_ORDER = [
+  "brand",
+  "navigation",
+  "hero",
+  "services",
+  "products",
+  "about",
+  "contact",
+  "social",
+  "footer",
+];
+
+const SITE_GROUP_LABELS: Record<
+  string,
+  string
+> = {
+  brand: "品牌資訊",
+  navigation: "導覽列",
+  hero: "首頁 Hero",
+  services: "服務區標題",
+  products: "商品區文字",
+  about: "關於我們",
+  contact: "聯絡區內容",
+  social: "社群與聯絡連結",
+  footer: "頁尾",
+};
+
+const SERVICE_ICON_OPTIONS = [
+  {
+    value: "laptop",
+    label: "筆電",
+  },
+  {
+    value: "cpu",
+    label: "CPU / 電腦",
+  },
+  {
+    value: "hard-drive",
+    label: "硬碟",
+  },
+  {
+    value: "shopping-cart",
+    label: "購物 / 配件",
+  },
+  {
+    value: "shield-check",
+    label: "防護 / 監控",
+  },
+  {
+    value: "wrench",
+    label: "維修工具",
+  },
+  {
+    value: "monitor",
+    label: "螢幕 / 桌機",
+  },
+];
 
 function formatPrice(
   price: number,
@@ -137,8 +235,73 @@ function createLocalId(): string {
     .slice(2)}`;
 }
 
+function createSettingValues(
+  settings: AdminSiteSetting[],
+): Partial<
+  Record<
+    SiteSettingKey,
+    string
+  >
+> {
+  const values: Partial<
+    Record<
+      SiteSettingKey,
+      string
+    >
+  > = {};
+
+  for (const setting of settings) {
+    values[setting.key] =
+      setting.value;
+  }
+
+  return values;
+}
+
+function isMultilineSetting(
+  key: SiteSettingKey,
+): boolean {
+  return (
+    key.includes(
+      "description",
+    ) ||
+    key ===
+      "about_description_1" ||
+    key ===
+      "about_description_2"
+  );
+}
+
+function getSettingInputType(
+  key: SiteSettingKey,
+):
+  | "text"
+  | "url"
+  | "email" {
+  if (
+    key === "contact_email"
+  ) {
+    return "email";
+  }
+
+  if (
+    key.endsWith("_url")
+  ) {
+    return "url";
+  }
+
+  return "text";
+}
+
 export default function AdminPage() {
   const router = useRouter();
+
+  const [
+    activeSection,
+    setActiveSection,
+  ] = useState<AdminSection>(
+    "products",
+  );
 
   const [
     products,
@@ -160,12 +323,18 @@ export default function AdminPage() {
     setPageError,
   ] = useState("");
 
+  /*
+   * ============================================================
+   * Product
+   * ============================================================
+   */
+
   const [
     editingId,
     setEditingId,
-  ] = useState<number | null>(
-    null,
-  );
+  ] = useState<
+    number | null
+  >(null);
 
   const [
     form,
@@ -178,16 +347,16 @@ export default function AdminPage() {
   const [
     pendingImages,
     setPendingImages,
-  ] = useState<PendingImage[]>(
-    [],
-  );
+  ] = useState<
+    PendingImage[]
+  >([]);
 
   const [
     pendingCoverId,
     setPendingCoverId,
-  ] = useState<string | null>(
-    null,
-  );
+  ] = useState<
+    string | null
+  >(null);
 
   const [
     imageInfo,
@@ -212,23 +381,99 @@ export default function AdminPage() {
   const [
     updatingStatusId,
     setUpdatingStatusId,
-  ] = useState<number | null>(
-    null,
-  );
+  ] = useState<
+    number | null
+  >(null);
 
   const [
     deletingId,
     setDeletingId,
-  ] = useState<number | null>(
-    null,
-  );
+  ] = useState<
+    number | null
+  >(null);
 
   const [
     imageActionId,
     setImageActionId,
-  ] = useState<number | null>(
-    null,
-  );
+  ] = useState<
+    number | null
+  >(null);
+
+  /*
+   * ============================================================
+   * CMS Site Settings
+   * ============================================================
+   */
+
+  const [
+    cmsSettings,
+    setCmsSettings,
+  ] = useState<
+    AdminSiteSetting[]
+  >([]);
+
+  const [
+    cmsValues,
+    setCmsValues,
+  ] = useState<
+    Partial<
+      Record<
+        SiteSettingKey,
+        string
+      >
+    >
+  >({});
+
+  const [
+    cmsSaving,
+    setCmsSaving,
+  ] = useState(false);
+
+  /*
+   * ============================================================
+   * CMS Services
+   * ============================================================
+   */
+
+  const [
+    siteServices,
+    setSiteServices,
+  ] = useState<
+    SiteService[]
+  >([]);
+
+  const [
+    serviceForm,
+    setServiceForm,
+  ] =
+    useState<SiteServiceFormState>(
+      INITIAL_SERVICE_FORM,
+    );
+
+  const [
+    editingServiceId,
+    setEditingServiceId,
+  ] = useState<
+    number | null
+  >(null);
+
+  const [
+    serviceSaving,
+    setServiceSaving,
+  ] = useState(false);
+
+  const [
+    serviceActionId,
+    setServiceActionId,
+  ] = useState<
+    number | null
+  >(null);
+
+  /*
+   * ============================================================
+   * Derived data
+   * ============================================================
+   */
 
   const editingProduct =
     useMemo(
@@ -240,14 +485,17 @@ export default function AdminPage() {
                 product.id ===
                 editingId,
             ),
-      [editingId, products],
+      [
+        editingId,
+        products,
+      ],
     );
 
   const existingImages =
     useMemo(() => {
       return [
-        ...(editingProduct?.images ??
-          []),
+        ...(editingProduct
+          ?.images ?? []),
       ].sort(
         (a, b) =>
           a.sortOrder -
@@ -276,31 +524,142 @@ export default function AdminPage() {
   const statistics =
     useMemo(() => {
       return {
-        total: products.length,
+        total:
+          products.length,
 
-        online: products.filter(
-          (product) =>
-            product.status ===
-            "上架",
-        ).length,
+        online:
+          products.filter(
+            (product) =>
+              product.status ===
+              "上架",
+          ).length,
 
-        offline: products.filter(
-          (product) =>
-            product.status ===
-            "下架",
-        ).length,
+        offline:
+          products.filter(
+            (product) =>
+              product.status ===
+              "下架",
+          ).length,
 
-        stock: products.reduce(
-          (
-            total,
-            product,
-          ) =>
-            total +
-            product.stock,
-          0,
-        ),
+        stock:
+          products.reduce(
+            (
+              total,
+              product,
+            ) =>
+              total +
+              product.stock,
+            0,
+          ),
       };
     }, [products]);
+
+  const groupedCmsSettings =
+    useMemo(() => {
+      const groupNames =
+        Array.from(
+          new Set(
+            cmsSettings.map(
+              (setting) =>
+                setting.groupName,
+            ),
+          ),
+        );
+
+      groupNames.sort(
+        (a, b) => {
+          const aIndex =
+            SITE_GROUP_ORDER.indexOf(
+              a,
+            );
+
+          const bIndex =
+            SITE_GROUP_ORDER.indexOf(
+              b,
+            );
+
+          const safeA =
+            aIndex === -1
+              ? Number.MAX_SAFE_INTEGER
+              : aIndex;
+
+          const safeB =
+            bIndex === -1
+              ? Number.MAX_SAFE_INTEGER
+              : bIndex;
+
+          if (safeA !== safeB) {
+            return safeA - safeB;
+          }
+
+          return a.localeCompare(
+            b,
+          );
+        },
+      );
+
+      return groupNames.map(
+        (groupName) => ({
+          groupName,
+
+          label:
+            SITE_GROUP_LABELS[
+              groupName
+            ] ?? groupName,
+
+          settings:
+            cmsSettings
+              .filter(
+                (setting) =>
+                  setting.groupName ===
+                  groupName,
+              )
+              .sort(
+                (a, b) =>
+                  a.sortOrder -
+                  b.sortOrder,
+              ),
+        }),
+      );
+    }, [cmsSettings]);
+
+  const cmsDirtyCount =
+    useMemo(() => {
+      return cmsSettings.filter(
+        (setting) =>
+          (
+            cmsValues[
+              setting.key
+            ] ?? ""
+          ) !== setting.value,
+      ).length;
+    }, [
+      cmsSettings,
+      cmsValues,
+    ]);
+
+  const editingService =
+    useMemo(
+      () =>
+        editingServiceId ===
+        null
+          ? undefined
+          : siteServices.find(
+              (service) =>
+                service.id ===
+                editingServiceId,
+            ),
+      [
+        editingServiceId,
+        siteServices,
+      ],
+    );
+
+  /*
+   * ============================================================
+   * Initialization
+   * ============================================================
+   */
 
   useEffect(() => {
     let active = true;
@@ -346,14 +705,38 @@ export default function AdminPage() {
           return;
         }
 
-        const currentProducts =
-          await fetchAdminProducts();
+        const [
+          currentProducts,
+          currentSettings,
+          currentServices,
+        ] =
+          await Promise.all([
+            fetchAdminProducts(),
+            fetchAdminSiteSettings(),
+            fetchAdminSiteServices(),
+          ]);
 
-        if (active) {
-          setProducts(
-            currentProducts,
-          );
+        if (!active) {
+          return;
         }
+
+        setProducts(
+          currentProducts,
+        );
+
+        setCmsSettings(
+          currentSettings,
+        );
+
+        setCmsValues(
+          createSettingValues(
+            currentSettings,
+          ),
+        );
+
+        setSiteServices(
+          currentServices,
+        );
       } catch (error) {
         if (active) {
           setPageError(
@@ -379,6 +762,38 @@ export default function AdminPage() {
     };
   }, [router]);
 
+  /*
+   * ============================================================
+   * General
+   * ============================================================
+   */
+
+  function switchSection(
+    section: AdminSection,
+  ) {
+    setPageError("");
+    setActiveSection(section);
+  }
+
+  async function logout() {
+    const supabase =
+      getSupabaseClient();
+
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+
+    router.replace(
+      "/login",
+    );
+  }
+
+  /*
+   * ============================================================
+   * Product helpers
+   * ============================================================
+   */
+
   async function reloadProducts() {
     const currentProducts =
       await fetchAdminProducts();
@@ -397,7 +812,9 @@ export default function AdminPage() {
 
     setPendingImages([]);
 
-    setPendingCoverId(null);
+    setPendingCoverId(
+      null,
+    );
 
     setImageInfo("");
 
@@ -412,7 +829,8 @@ export default function AdminPage() {
     );
 
     setForm({
-      name: product.name,
+      name:
+        product.name,
 
       category:
         product.category,
@@ -434,7 +852,9 @@ export default function AdminPage() {
 
     setPendingImages([]);
 
-    setPendingCoverId(null);
+    setPendingCoverId(
+      null,
+    );
 
     setImageInfo("");
 
@@ -512,7 +932,8 @@ export default function AdminPage() {
       category,
       price,
       stock,
-      status: form.status,
+      status:
+        form.status,
 
       description:
         form.description
@@ -540,8 +961,7 @@ export default function AdminPage() {
     event.target.value = "";
 
     if (
-      files.length ===
-      0
+      files.length === 0
     ) {
       return;
     }
@@ -596,9 +1016,11 @@ export default function AdminPage() {
             compressed.size;
 
           preparedImages.push({
-            id: createLocalId(),
+            id:
+              createLocalId(),
 
-            file: compressed,
+            file:
+              compressed,
 
             previewUrl,
 
@@ -676,7 +1098,9 @@ export default function AdminPage() {
         );
       }
     } finally {
-      setCompressing(false);
+      setCompressing(
+        false,
+      );
     }
   }
 
@@ -886,16 +1310,6 @@ export default function AdminPage() {
         successMessage,
       );
     } catch (error) {
-      /*
-       * 如果圖片已上傳到 Storage，
-       * 但商品本身尚未建立，
-       * 可以安全刪除這批檔案。
-       *
-       * 如果商品已建立，
-       * 先確認哪些圖片已經寫入
-       * product_images，
-       * 只清理沒有資料列對應的孤兒檔案。
-       */
       if (
         uploadedImages.length >
         0
@@ -1006,22 +1420,12 @@ export default function AdminPage() {
 
       setPageError("");
 
-      const updatedProduct =
-        await updateProductStatus(
-          product.id,
-          nextStatus,
-        );
-
-      setProducts(
-        (current) =>
-          current.map(
-            (item) =>
-              item.id ===
-              product.id
-                ? updatedProduct
-                : item,
-          ),
+      await updateProductStatus(
+        product.id,
+        nextStatus,
       );
+
+      await reloadProducts();
     } catch (error) {
       const message =
         getErrorMessage(
@@ -1293,18 +1697,494 @@ export default function AdminPage() {
     }
   }
 
-  async function logout() {
-    const supabase =
-      getSupabaseClient();
+  /*
+   * ============================================================
+   * Site settings CMS
+   * ============================================================
+   */
 
-    if (supabase) {
-      await supabase.auth.signOut();
-    }
+  async function reloadCmsSettings() {
+    const settings =
+      await fetchAdminSiteSettings();
 
-    router.replace(
-      "/login",
+    setCmsSettings(settings);
+
+    setCmsValues(
+      createSettingValues(
+        settings,
+      ),
     );
   }
+
+  function handleCmsValueChange(
+    key: SiteSettingKey,
+    value: string,
+  ) {
+    setCmsValues(
+      (current) => ({
+        ...current,
+        [key]: value,
+      }),
+    );
+  }
+
+  function resetCmsChanges() {
+    setCmsValues(
+      createSettingValues(
+        cmsSettings,
+      ),
+    );
+  }
+
+  async function saveCmsSettings(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (
+      cmsSaving ||
+      cmsDirtyCount === 0
+    ) {
+      return;
+    }
+
+    const changes =
+      cmsSettings
+        .map(
+          (setting) => ({
+            key:
+              setting.key,
+
+            value:
+              cmsValues[
+                setting.key
+              ] ?? "",
+          }),
+        )
+        .filter(
+          (setting) => {
+            const original =
+              cmsSettings.find(
+                (item) =>
+                  item.key ===
+                  setting.key,
+              );
+
+            return (
+              original?.value !==
+              setting.value
+            );
+          },
+        );
+
+    try {
+      setCmsSaving(true);
+
+      setPageError("");
+
+      await updateSiteSettings(
+        changes,
+      );
+
+      await reloadCmsSettings();
+
+      alert(
+        "網站內容已儲存。",
+      );
+    } catch (error) {
+      const message =
+        getErrorMessage(
+          error,
+          "網站內容儲存失敗。",
+        );
+
+      setPageError(message);
+
+      alert(message);
+    } finally {
+      setCmsSaving(false);
+    }
+  }
+
+  /*
+   * ============================================================
+   * Site services CMS
+   * ============================================================
+   */
+
+  async function reloadSiteServices() {
+    const services =
+      await fetchAdminSiteServices();
+
+    setSiteServices(
+      services,
+    );
+  }
+
+  function resetServiceForm() {
+    setEditingServiceId(
+      null,
+    );
+
+    setServiceForm({
+      ...INITIAL_SERVICE_FORM,
+    });
+  }
+
+  function startEditService(
+    service: SiteService,
+  ) {
+    setEditingServiceId(
+      service.id,
+    );
+
+    setServiceForm({
+      title:
+        service.title,
+
+      description:
+        service.description,
+
+      iconKey:
+        service.iconKey,
+
+      isEnabled:
+        service.isEnabled,
+    });
+  }
+
+  async function saveSiteService(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (serviceSaving) {
+      return;
+    }
+
+    const title =
+      serviceForm.title.trim();
+
+    const description =
+      serviceForm.description.trim();
+
+    if (!title) {
+      alert(
+        "請輸入服務名稱。",
+      );
+
+      return;
+    }
+
+    if (!description) {
+      alert(
+        "請輸入服務說明。",
+      );
+
+      return;
+    }
+
+    const currentService =
+      editingService;
+
+    const nextSortOrder =
+      currentService
+        ?.sortOrder ??
+      (
+        siteServices.length >
+        0
+          ? Math.max(
+              ...siteServices.map(
+                (service) =>
+                  service.sortOrder,
+              ),
+            ) + 1
+          : 0
+      );
+
+    const payload:
+      SiteServiceInput = {
+        title,
+        description,
+
+        iconKey:
+          serviceForm.iconKey,
+
+        sortOrder:
+          nextSortOrder,
+
+        isEnabled:
+          serviceForm.isEnabled,
+      };
+
+    try {
+      setServiceSaving(
+        true,
+      );
+
+      setPageError("");
+
+      if (
+        editingServiceId ===
+        null
+      ) {
+        await createSiteService(
+          payload,
+        );
+      } else {
+        await updateSiteService(
+          editingServiceId,
+          payload,
+        );
+      }
+
+      await reloadSiteServices();
+
+      const message =
+        editingServiceId ===
+        null
+          ? "服務項目已新增。"
+          : "服務項目已修改。";
+
+      resetServiceForm();
+
+      alert(message);
+    } catch (error) {
+      const message =
+        getErrorMessage(
+          error,
+          "服務項目儲存失敗。",
+        );
+
+      setPageError(message);
+
+      alert(message);
+    } finally {
+      setServiceSaving(
+        false,
+      );
+    }
+  }
+
+  async function toggleServiceEnabled(
+    service: SiteService,
+  ) {
+    if (
+      serviceActionId !==
+      null
+    ) {
+      return;
+    }
+
+    try {
+      setServiceActionId(
+        service.id,
+      );
+
+      setPageError("");
+
+      await updateSiteService(
+        service.id,
+        {
+          title:
+            service.title,
+
+          description:
+            service.description,
+
+          iconKey:
+            service.iconKey,
+
+          sortOrder:
+            service.sortOrder,
+
+          isEnabled:
+            !service.isEnabled,
+        },
+      );
+
+      await reloadSiteServices();
+    } catch (error) {
+      const message =
+        getErrorMessage(
+          error,
+          "更新服務狀態失敗。",
+        );
+
+      setPageError(message);
+
+      alert(message);
+    } finally {
+      setServiceActionId(
+        null,
+      );
+    }
+  }
+
+  async function moveSiteService(
+    index: number,
+    direction:
+      | "up"
+      | "down",
+  ) {
+    if (
+      serviceActionId !==
+      null
+    ) {
+      return;
+    }
+
+    const targetIndex =
+      direction === "up"
+        ? index - 1
+        : index + 1;
+
+    if (
+      targetIndex < 0 ||
+      targetIndex >=
+        siteServices.length
+    ) {
+      return;
+    }
+
+    const next = [
+      ...siteServices,
+    ];
+
+    const current =
+      next[index];
+
+    next[index] =
+      next[targetIndex];
+
+    next[targetIndex] =
+      current;
+
+    try {
+      setServiceActionId(
+        current.id,
+      );
+
+      setPageError("");
+
+      const updated =
+        await updateSiteServiceOrder(
+          next.map(
+            (service) =>
+              service.id,
+          ),
+        );
+
+      setSiteServices(
+        updated,
+      );
+    } catch (error) {
+      const message =
+        getErrorMessage(
+          error,
+          "調整服務順序失敗。",
+        );
+
+      setPageError(message);
+
+      alert(message);
+    } finally {
+      setServiceActionId(
+        null,
+      );
+    }
+  }
+
+  async function handleDeleteSiteService(
+    service: SiteService,
+  ) {
+    if (
+      serviceActionId !==
+      null
+    ) {
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        `確定要刪除服務「${service.title}」嗎？`,
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setServiceActionId(
+        service.id,
+      );
+
+      setPageError("");
+
+      await deleteSiteService(
+        service.id,
+      );
+
+      const remainingIds =
+        siteServices
+          .filter(
+            (item) =>
+              item.id !==
+              service.id,
+          )
+          .map(
+            (item) =>
+              item.id,
+          );
+
+      if (
+        remainingIds.length >
+        0
+      ) {
+        const updated =
+          await updateSiteServiceOrder(
+            remainingIds,
+          );
+
+        setSiteServices(
+          updated,
+        );
+      } else {
+        setSiteServices([]);
+      }
+
+      if (
+        editingServiceId ===
+        service.id
+      ) {
+        resetServiceForm();
+      }
+
+      alert(
+        "服務項目已刪除。",
+      );
+    } catch (error) {
+      const message =
+        getErrorMessage(
+          error,
+          "刪除服務項目失敗。",
+        );
+
+      setPageError(message);
+
+      alert(message);
+    } finally {
+      setServiceActionId(
+        null,
+      );
+    }
+  }
+
+  /*
+   * ============================================================
+   * Loading / Configuration
+   * ============================================================
+   */
 
   if (authChecking) {
     return (
@@ -1350,6 +2230,12 @@ export default function AdminPage() {
     );
   }
 
+  /*
+   * ============================================================
+   * UI
+   * ============================================================
+   */
+
   return (
     <main className="min-h-screen bg-[#050910] p-4 text-white md:p-6">
       <div className="mx-auto max-w-[1600px]">
@@ -1360,7 +2246,7 @@ export default function AdminPage() {
             </h1>
 
             <p className="mt-2 text-slate-400">
-              商品資料與圖片皆由
+              商品、網站內容與服務項目皆由
               Supabase 管理
             </p>
           </div>
@@ -1385,824 +2271,1470 @@ export default function AdminPage() {
           </div>
         </header>
 
+        <section className="mb-6 grid gap-3 rounded-3xl border border-white/10 bg-[#0b111d] p-3 sm:grid-cols-3">
+          <AdminTab
+            active={
+              activeSection ===
+              "products"
+            }
+            onClick={() =>
+              switchSection(
+                "products",
+              )
+            }
+            icon={
+              <Boxes className="h-5 w-5" />
+            }
+            title="商品管理"
+            description="商品、多圖片、庫存與上下架"
+          />
+
+          <AdminTab
+            active={
+              activeSection ===
+              "content"
+            }
+            onClick={() =>
+              switchSection(
+                "content",
+              )
+            }
+            icon={
+              <FileText className="h-5 w-5" />
+            }
+            title="網站內容"
+            description="首頁文字、連結與聯絡資訊"
+          />
+
+          <AdminTab
+            active={
+              activeSection ===
+              "services"
+            }
+            onClick={() =>
+              switchSection(
+                "services",
+              )
+            }
+            icon={
+              <Wrench className="h-5 w-5" />
+            }
+            title="服務項目"
+            description="新增、修改、排序與停用服務"
+          />
+        </section>
+
         {pageError && (
           <div className="mb-6 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
             {pageError}
           </div>
         )}
 
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard
-            title="商品總數"
-            value={
-              statistics.total
-            }
-            color="text-blue-400"
-          />
+        {activeSection ===
+          "products" && (
+          <>
+            <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <StatCard
+                title="商品總數"
+                value={
+                  statistics.total
+                }
+                color="text-blue-400"
+              />
 
-          <StatCard
-            title="上架商品"
-            value={
-              statistics.online
-            }
-            color="text-green-400"
-          />
+              <StatCard
+                title="上架商品"
+                value={
+                  statistics.online
+                }
+                color="text-green-400"
+              />
 
-          <StatCard
-            title="下架商品"
-            value={
-              statistics.offline
-            }
-            color="text-orange-400"
-          />
+              <StatCard
+                title="下架商品"
+                value={
+                  statistics.offline
+                }
+                color="text-orange-400"
+              />
 
-          <StatCard
-            title="庫存總數"
-            value={
-              statistics.stock
-            }
-            color="text-purple-400"
-          />
-        </section>
+              <StatCard
+                title="庫存總數"
+                value={
+                  statistics.stock
+                }
+                color="text-purple-400"
+              />
+            </section>
 
-        <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_480px]">
-          <section className="overflow-hidden rounded-3xl border border-white/10 bg-[#0b111d]">
-            <div className="border-b border-white/10 p-6">
-              <h2 className="text-xl font-black">
-                商品列表
-              </h2>
+            <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_480px]">
+              <section className="overflow-hidden rounded-3xl border border-white/10 bg-[#0b111d]">
+                <div className="border-b border-white/10 p-6">
+                  <h2 className="text-xl font-black">
+                    商品列表
+                  </h2>
 
-              <p className="mt-1 text-sm text-slate-500">
-                商品資料儲存在
-                Supabase Database
-              </p>
-            </div>
+                  <p className="mt-1 text-sm text-slate-500">
+                    商品資料儲存在
+                    Supabase Database
+                  </p>
+                </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1100px] text-left text-sm">
-                <thead className="bg-white/[0.04] text-slate-400">
-                  <tr>
-                    <th className="px-4 py-4">
-                      圖片
-                    </th>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[1100px] text-left text-sm">
+                    <thead className="bg-white/[0.04] text-slate-400">
+                      <tr>
+                        <th className="px-4 py-4">
+                          圖片
+                        </th>
 
-                    <th className="px-4 py-4">
-                      商品名稱
-                    </th>
+                        <th className="px-4 py-4">
+                          商品名稱
+                        </th>
 
-                    <th className="px-4 py-4">
-                      分類
-                    </th>
+                        <th className="px-4 py-4">
+                          分類
+                        </th>
 
-                    <th className="px-4 py-4">
-                      價格
-                    </th>
+                        <th className="px-4 py-4">
+                          價格
+                        </th>
 
-                    <th className="px-4 py-4">
-                      庫存
-                    </th>
+                        <th className="px-4 py-4">
+                          庫存
+                        </th>
 
-                    <th className="px-4 py-4">
-                      狀態
-                    </th>
+                        <th className="px-4 py-4">
+                          狀態
+                        </th>
 
-                    <th className="px-4 py-4">
-                      操作
-                    </th>
-                  </tr>
-                </thead>
+                        <th className="px-4 py-4">
+                          操作
+                        </th>
+                      </tr>
+                    </thead>
 
-                <tbody>
-                  {products.map(
-                    (product) => {
-                      const imageCount =
-                        product
-                          .images
-                          ?.length ??
-                        (product.imageUrl
-                          ? 1
-                          : 0);
+                    <tbody>
+                      {products.map(
+                        (product) => {
+                          const imageCount =
+                            product
+                              .images
+                              ?.length ??
+                            (
+                              product.imageUrl
+                                ? 1
+                                : 0
+                            );
 
-                      return (
-                        <tr
-                          key={
-                            product.id
-                          }
-                          className="border-t border-white/10"
-                        >
-                          <td className="px-4 py-4">
-                            <div className="flex flex-col items-start gap-1">
-                              <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black/30">
-                                {product.imageUrl ? (
-                                  <img
-                                    src={
-                                      product.imageUrl
-                                    }
-                                    alt={
-                                      product.name
-                                    }
-                                    className="h-full w-full object-cover"
-                                  />
-                                ) : (
-                                  <span className="text-[10px] text-slate-500">
-                                    無圖片
-                                  </span>
-                                )}
-                              </div>
-
-                              <span className="text-[11px] text-slate-500">
-                                {
-                                  imageCount
-                                }{" "}
-                                張
-                              </span>
-                            </div>
-                          </td>
-
-                          <td className="px-4 py-4">
-                            <div className="font-bold">
-                              {
-                                product.name
-                              }
-                            </div>
-
-                            <div className="mt-1 max-w-xs truncate text-xs text-slate-500">
-                              {product.description.join(
-                                " / ",
-                              )}
-                            </div>
-                          </td>
-
-                          <td className="px-4 py-4 text-slate-300">
-                            {
-                              product.category
-                            }
-                          </td>
-
-                          <td className="px-4 py-4 font-bold">
-                            NT$
-                            {formatPrice(
-                              product.price,
-                            )}
-                          </td>
-
-                          <td className="px-4 py-4">
-                            {
-                              product.stock
-                            }
-                          </td>
-
-                          <td className="px-4 py-4">
-                            <button
-                              type="button"
-                              disabled={
-                                updatingStatusId ===
+                          return (
+                            <tr
+                              key={
                                 product.id
                               }
-                              onClick={() =>
-                                toggleStatus(
-                                  product,
-                                )
-                              }
-                              className={
-                                product.status ===
-                                "上架"
-                                  ? "rounded-full bg-green-500/15 px-3 py-1 text-xs font-bold text-green-400 transition hover:bg-green-500/25 disabled:opacity-50"
-                                  : "rounded-full bg-orange-500/15 px-3 py-1 text-xs font-bold text-orange-400 transition hover:bg-orange-500/25 disabled:opacity-50"
-                              }
+                              className="border-t border-white/10"
                             >
-                              {updatingStatusId ===
-                              product.id
-                                ? "更新中..."
-                                : product.status}
-                            </button>
-                          </td>
+                              <td className="px-4 py-4">
+                                <div className="flex flex-col items-start gap-1">
+                                  <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black/30">
+                                    {product.imageUrl ? (
+                                      <img
+                                        src={
+                                          product.imageUrl
+                                        }
+                                        alt={
+                                          product.name
+                                        }
+                                        className="h-full w-full object-cover"
+                                      />
+                                    ) : (
+                                      <span className="text-[10px] text-slate-500">
+                                        無圖片
+                                      </span>
+                                    )}
+                                  </div>
 
-                          <td className="px-4 py-4">
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  startEdit(
-                                    product,
-                                  )
+                                  <span className="text-[11px] text-slate-500">
+                                    {
+                                      imageCount
+                                    }{" "}
+                                    張
+                                  </span>
+                                </div>
+                              </td>
+
+                              <td className="px-4 py-4">
+                                <div className="font-bold">
+                                  {
+                                    product.name
+                                  }
+                                </div>
+
+                                <div className="mt-1 max-w-xs truncate text-xs text-slate-500">
+                                  {product.description.join(
+                                    " / ",
+                                  )}
+                                </div>
+                              </td>
+
+                              <td className="px-4 py-4 text-slate-300">
+                                {
+                                  product.category
                                 }
-                                className="rounded-lg bg-blue-500/10 p-2 text-blue-400 transition hover:bg-blue-500/20"
-                                title="編輯商品"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </button>
+                              </td>
 
-                              <button
-                                type="button"
-                                disabled={
-                                  deletingId ===
+                              <td className="px-4 py-4 font-bold">
+                                NT$
+                                {formatPrice(
+                                  product.price,
+                                )}
+                              </td>
+
+                              <td className="px-4 py-4">
+                                {
+                                  product.stock
+                                }
+                              </td>
+
+                              <td className="px-4 py-4">
+                                <button
+                                  type="button"
+                                  disabled={
+                                    updatingStatusId ===
+                                    product.id
+                                  }
+                                  onClick={() =>
+                                    toggleStatus(
+                                      product,
+                                    )
+                                  }
+                                  className={
+                                    product.status ===
+                                    "上架"
+                                      ? "rounded-full bg-green-500/15 px-3 py-1 text-xs font-bold text-green-400 transition hover:bg-green-500/25 disabled:opacity-50"
+                                      : "rounded-full bg-orange-500/15 px-3 py-1 text-xs font-bold text-orange-400 transition hover:bg-orange-500/25 disabled:opacity-50"
+                                  }
+                                >
+                                  {updatingStatusId ===
                                   product.id
-                                }
-                                onClick={() =>
-                                  deleteProduct(
-                                    product,
-                                  )
-                                }
-                                className="rounded-lg bg-red-500/10 p-2 text-red-400 transition hover:bg-red-500/20 disabled:opacity-50"
-                                title="刪除商品"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
+                                    ? "更新中..."
+                                    : product.status}
+                                </button>
+                              </td>
+
+                              <td className="px-4 py-4">
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      startEdit(
+                                        product,
+                                      )
+                                    }
+                                    className="rounded-lg bg-blue-500/10 p-2 text-blue-400 transition hover:bg-blue-500/20"
+                                    title="編輯商品"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={
+                                      deletingId ===
+                                      product.id
+                                    }
+                                    onClick={() =>
+                                      deleteProduct(
+                                        product,
+                                      )
+                                    }
+                                    className="rounded-lg bg-red-500/10 p-2 text-red-400 transition hover:bg-red-500/20 disabled:opacity-50"
+                                    title="刪除商品"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        },
+                      )}
+
+                      {products.length ===
+                        0 && (
+                        <tr>
+                          <td
+                            colSpan={
+                              7
+                            }
+                            className="p-10 text-center text-slate-500"
+                          >
+                            目前尚無商品資料
                           </td>
                         </tr>
-                      );
-                    },
-                  )}
-
-                  {products.length ===
-                    0 && (
-                    <tr>
-                      <td
-                        colSpan={7}
-                        className="p-10 text-center text-slate-500"
-                      >
-                        目前尚無商品資料
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <aside className="rounded-3xl border border-white/10 bg-[#0b111d] p-6">
-            <div className="mb-6 flex items-center gap-3">
-              {editingId ===
-              null ? (
-                <Plus className="text-blue-400" />
-              ) : (
-                <Pencil className="text-blue-400" />
-              )}
-
-              <div>
-                <h2 className="text-xl font-black">
-                  {editingId ===
-                  null
-                    ? "新增商品"
-                    : "編輯商品"}
-                </h2>
-
-                {editingId !==
-                  null && (
-                  <p className="mt-1 text-xs text-slate-500">
-                    可修改商品資料、圖片順序、封面與新增多張圖片
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <form
-              onSubmit={
-                saveProduct
-              }
-              className="space-y-5"
-            >
-              <FormField label="商品名稱">
-                <input
-                  value={
-                    form.name
-                  }
-                  onChange={(
-                    event,
-                  ) =>
-                    setForm({
-                      ...form,
-
-                      name:
-                        event
-                          .target
-                          .value,
-                    })
-                  }
-                  className="admin-input"
-                  placeholder="請輸入商品名稱"
-                />
-              </FormField>
-
-              <FormField label="商品分類">
-                <input
-                  value={
-                    form.category
-                  }
-                  onChange={(
-                    event,
-                  ) =>
-                    setForm({
-                      ...form,
-
-                      category:
-                        event
-                          .target
-                          .value,
-                    })
-                  }
-                  list="product-category-options"
-                  className="admin-input"
-                  placeholder="請輸入或選擇分類"
-                />
-
-                <datalist id="product-category-options">
-                  {categoryOptions.map(
-                    (category) => (
-                      <option
-                        key={
-                          category
-                        }
-                        value={
-                          category
-                        }
-                      />
-                    ),
-                  )}
-                </datalist>
-              </FormField>
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField label="價格">
-                  <input
-                    type="number"
-                    min="0"
-                    value={
-                      form.price
-                    }
-                    onChange={(
-                      event,
-                    ) =>
-                      setForm({
-                        ...form,
-
-                        price:
-                          event
-                            .target
-                            .value,
-                      })
-                    }
-                    className="admin-input"
-                  />
-                </FormField>
-
-                <FormField label="庫存">
-                  <input
-                    type="number"
-                    min="0"
-                    value={
-                      form.stock
-                    }
-                    onChange={(
-                      event,
-                    ) =>
-                      setForm({
-                        ...form,
-
-                        stock:
-                          event
-                            .target
-                            .value,
-                      })
-                    }
-                    className="admin-input"
-                  />
-                </FormField>
-              </div>
-
-              <FormField label="商品狀態">
-                <select
-                  value={
-                    form.status
-                  }
-                  onChange={(
-                    event,
-                  ) =>
-                    setForm({
-                      ...form,
-
-                      status:
-                        event
-                          .target
-                          .value as ProductStatus,
-                    })
-                  }
-                  className="admin-input"
-                >
-                  <option value="上架">
-                    上架
-                  </option>
-
-                  <option value="下架">
-                    下架
-                  </option>
-                </select>
-              </FormField>
-
-              {editingId !==
-                null &&
-                existingImages.length >
-                  0 && (
-                  <FormField label="目前商品圖片">
-                    <div className="grid grid-cols-2 gap-3">
-                      {existingImages.map(
-                        (
-                          image,
-                          index,
-                        ) => (
-                          <div
-                            key={
-                              image.id
-                            }
-                            className={`overflow-hidden rounded-2xl border bg-black/30 ${
-                              image.isCover
-                                ? "border-yellow-400/60"
-                                : "border-white/10"
-                            }`}
-                          >
-                            <div className="relative aspect-square overflow-hidden bg-black">
-                              <img
-                                src={
-                                  image.imageUrl
-                                }
-                                alt={`商品圖片 ${
-                                  index +
-                                  1
-                                }`}
-                                className="h-full w-full object-contain"
-                              />
-
-                              {image.isCover && (
-                                <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-yellow-400 px-2 py-1 text-[10px] font-black text-black">
-                                  <Star className="h-3 w-3 fill-current" />
-                                  封面
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="grid grid-cols-4 border-t border-white/10">
-                              <button
-                                type="button"
-                                disabled={
-                                  index ===
-                                    0 ||
-                                  imageActionId !==
-                                    null
-                                }
-                                onClick={() =>
-                                  handleMoveExistingImage(
-                                    index,
-                                    "left",
-                                  )
-                                }
-                                className="flex items-center justify-center border-r border-white/10 p-2 text-slate-400 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-                                title="往前移"
-                              >
-                                <ChevronLeft className="h-4 w-4" />
-                              </button>
-
-                              <button
-                                type="button"
-                                disabled={
-                                  index ===
-                                    existingImages.length -
-                                      1 ||
-                                  imageActionId !==
-                                    null
-                                }
-                                onClick={() =>
-                                  handleMoveExistingImage(
-                                    index,
-                                    "right",
-                                  )
-                                }
-                                className="flex items-center justify-center border-r border-white/10 p-2 text-slate-400 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-                                title="往後移"
-                              >
-                                <ChevronRight className="h-4 w-4" />
-                              </button>
-
-                              <button
-                                type="button"
-                                disabled={
-                                  image.isCover ||
-                                  imageActionId !==
-                                    null
-                                }
-                                onClick={() =>
-                                  handleSetCover(
-                                    image,
-                                  )
-                                }
-                                className="flex items-center justify-center border-r border-white/10 p-2 text-yellow-400 transition hover:bg-yellow-500/10 disabled:cursor-not-allowed disabled:opacity-30"
-                                title="設為封面"
-                              >
-                                <Star className="h-4 w-4" />
-                              </button>
-
-                              <button
-                                type="button"
-                                disabled={
-                                  imageActionId !==
-                                  null
-                                }
-                                onClick={() =>
-                                  handleDeleteExistingImage(
-                                    image,
-                                  )
-                                }
-                                className="flex items-center justify-center p-2 text-red-400 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-30"
-                                title="刪除圖片"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
-                          </div>
-                        ),
                       )}
-                    </div>
-
-                    <p className="mt-2 text-xs leading-5 text-slate-500">
-                      左右箭頭可調整順序，星號可指定封面。
-                    </p>
-                  </FormField>
-                )}
-
-              <FormField label="新增商品圖片">
-                <label
-                  className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-5 text-center text-sm transition ${
-                    compressing
-                      ? "cursor-wait border-blue-500/40 bg-blue-500/10 text-blue-300"
-                      : "border-white/20 bg-white/[0.03] text-slate-300 hover:border-blue-500/40 hover:bg-white/[0.06]"
-                  }`}
-                >
-                  <ImagePlus className="h-7 w-7" />
-
-                  <span className="font-semibold">
-                    {compressing
-                      ? "圖片壓縮處理中..."
-                      : "選擇一張或多張圖片"}
-                  </span>
-
-                  <span className="text-xs leading-5 text-slate-500">
-                    支援 JPG、PNG、WebP
-                    <br />
-                    每張自動轉為
-                    WebP，最大 1600 ×
-                    1600
-                  </span>
-
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    multiple
-                    onChange={
-                      handleImagesChange
-                    }
-                    disabled={
-                      compressing ||
-                      saving
-                    }
-                    className="hidden"
-                  />
-                </label>
-              </FormField>
-
-              {imageInfo && (
-                <div className="rounded-xl border border-green-500/20 bg-green-500/10 p-3 text-sm leading-6 text-green-300">
-                  {imageInfo}
+                    </tbody>
+                  </table>
                 </div>
-              )}
+              </section>
 
-              {imageError && (
-                <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm leading-6 text-red-300">
-                  {imageError}
-                </div>
-              )}
+              <aside className="rounded-3xl border border-white/10 bg-[#0b111d] p-6">
+                <div className="mb-6 flex items-center gap-3">
+                  {editingId ===
+                  null ? (
+                    <Plus className="text-blue-400" />
+                  ) : (
+                    <Pencil className="text-blue-400" />
+                  )}
 
-              {pendingImages.length >
-                0 && (
-                <FormField label={`待上傳圖片（${pendingImages.length} 張）`}>
-                  <div className="grid grid-cols-2 gap-3">
-                    {pendingImages.map(
-                      (
-                        image,
-                        index,
-                      ) => (
-                        <div
-                          key={
-                            image.id
-                          }
-                          className={`overflow-hidden rounded-2xl border bg-black/30 ${
-                            pendingCoverId ===
-                            image.id
-                              ? "border-yellow-400/60"
-                              : "border-blue-500/20"
-                          }`}
-                        >
-                          <div className="relative aspect-square overflow-hidden bg-black">
-                            <img
-                              src={
-                                image.previewUrl
-                              }
-                              alt={`待上傳圖片 ${
-                                index +
-                                1
-                              }`}
-                              className="h-full w-full object-contain"
-                            />
+                  <div>
+                    <h2 className="text-xl font-black">
+                      {editingId ===
+                      null
+                        ? "新增商品"
+                        : "編輯商品"}
+                    </h2>
 
-                            {pendingCoverId ===
-                              image.id && (
-                              <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-yellow-400 px-2 py-1 text-[10px] font-black text-black">
-                                <Star className="h-3 w-3 fill-current" />
-                                儲存後設為封面
-                              </div>
-                            )}
-
-                            <div className="absolute bottom-2 right-2 rounded bg-black/70 px-2 py-1 text-[10px] text-white">
-                              {formatFileSize(
-                                image.compressedSize,
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-4 border-t border-white/10">
-                            <button
-                              type="button"
-                              disabled={
-                                index ===
-                                0
-                              }
-                              onClick={() =>
-                                movePendingImage(
-                                  index,
-                                  "left",
-                                )
-                              }
-                              className="flex items-center justify-center border-r border-white/10 p-2 text-slate-400 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-                              title="往前移"
-                            >
-                              <ChevronLeft className="h-4 w-4" />
-                            </button>
-
-                            <button
-                              type="button"
-                              disabled={
-                                index ===
-                                pendingImages.length -
-                                  1
-                              }
-                              onClick={() =>
-                                movePendingImage(
-                                  index,
-                                  "right",
-                                )
-                              }
-                              className="flex items-center justify-center border-r border-white/10 p-2 text-slate-400 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-                              title="往後移"
-                            >
-                              <ChevronRight className="h-4 w-4" />
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setPendingCoverId(
-                                  image.id,
-                                )
-                              }
-                              className={`flex items-center justify-center border-r border-white/10 p-2 transition ${
-                                pendingCoverId ===
-                                image.id
-                                  ? "bg-yellow-500/10 text-yellow-300"
-                                  : "text-yellow-400 hover:bg-yellow-500/10"
-                              }`}
-                              title="儲存後設為封面"
-                            >
-                              <Star
-                                className={`h-4 w-4 ${
-                                  pendingCoverId ===
-                                  image.id
-                                    ? "fill-current"
-                                    : ""
-                                }`}
-                              />
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                removePendingImage(
-                                  image.id,
-                                )
-                              }
-                              className="flex items-center justify-center p-2 text-red-400 transition hover:bg-red-500/10"
-                              title="移除圖片"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </div>
-                      ),
+                    {editingId !==
+                      null && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        可修改商品資料、圖片順序、封面與新增多張圖片
+                      </p>
                     )}
                   </div>
+                </div>
 
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
-                    圖片尚未上傳到
-                    Supabase，按下儲存商品後才會正式上傳。
-                  </p>
-                </FormField>
-              )}
-
-              <FormField label="商品說明">
-                <textarea
-                  rows={7}
-                  value={
-                    form.description
+                <form
+                  onSubmit={
+                    saveProduct
                   }
-                  onChange={(
-                    event,
-                  ) =>
-                    setForm({
-                      ...form,
+                  className="space-y-5"
+                >
+                  <FormField label="商品名稱">
+                    <input
+                      value={
+                        form.name
+                      }
+                      onChange={(
+                        event,
+                      ) =>
+                        setForm({
+                          ...form,
 
-                      description:
-                        event
-                          .target
-                          .value,
-                    })
-                  }
-                  className="admin-input resize-none"
-                  placeholder={`每行輸入一項商品特色
+                          name:
+                            event
+                              .target
+                              .value,
+                        })
+                      }
+                      className="admin-input"
+                      placeholder="請輸入商品名稱"
+                    />
+                  </FormField>
+
+                  <FormField label="商品分類">
+                    <input
+                      value={
+                        form.category
+                      }
+                      onChange={(
+                        event,
+                      ) =>
+                        setForm({
+                          ...form,
+
+                          category:
+                            event
+                              .target
+                              .value,
+                        })
+                      }
+                      list="product-category-options"
+                      className="admin-input"
+                      placeholder="請輸入或選擇分類"
+                    />
+
+                    <datalist id="product-category-options">
+                      {categoryOptions.map(
+                        (
+                          category,
+                        ) => (
+                          <option
+                            key={
+                              category
+                            }
+                            value={
+                              category
+                            }
+                          />
+                        ),
+                      )}
+                    </datalist>
+                  </FormField>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField label="價格">
+                      <input
+                        type="number"
+                        min="0"
+                        value={
+                          form.price
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          setForm({
+                            ...form,
+
+                            price:
+                              event
+                                .target
+                                .value,
+                          })
+                        }
+                        className="admin-input"
+                      />
+                    </FormField>
+
+                    <FormField label="庫存">
+                      <input
+                        type="number"
+                        min="0"
+                        value={
+                          form.stock
+                        }
+                        onChange={(
+                          event,
+                        ) =>
+                          setForm({
+                            ...form,
+
+                            stock:
+                              event
+                                .target
+                                .value,
+                          })
+                        }
+                        className="admin-input"
+                      />
+                    </FormField>
+                  </div>
+
+                  <FormField label="商品狀態">
+                    <select
+                      value={
+                        form.status
+                      }
+                      onChange={(
+                        event,
+                      ) =>
+                        setForm({
+                          ...form,
+
+                          status:
+                            event
+                              .target
+                              .value as ProductStatus,
+                        })
+                      }
+                      className="admin-input"
+                    >
+                      <option value="上架">
+                        上架
+                      </option>
+
+                      <option value="下架">
+                        下架
+                      </option>
+                    </select>
+                  </FormField>
+
+                  {editingId !==
+                    null &&
+                    existingImages.length >
+                      0 && (
+                      <FormField label="目前商品圖片">
+                        <div className="grid grid-cols-2 gap-3">
+                          {existingImages.map(
+                            (
+                              image,
+                              index,
+                            ) => (
+                              <div
+                                key={
+                                  image.id
+                                }
+                                className={`overflow-hidden rounded-2xl border bg-black/30 ${
+                                  image.isCover
+                                    ? "border-yellow-400/60"
+                                    : "border-white/10"
+                                }`}
+                              >
+                                <div className="relative aspect-square overflow-hidden bg-black">
+                                  <img
+                                    src={
+                                      image.imageUrl
+                                    }
+                                    alt={`商品圖片 ${
+                                      index +
+                                      1
+                                    }`}
+                                    className="h-full w-full object-contain"
+                                  />
+
+                                  {image.isCover && (
+                                    <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-yellow-400 px-2 py-1 text-[10px] font-black text-black">
+                                      <Star className="h-3 w-3 fill-current" />
+                                      封面
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="grid grid-cols-4 border-t border-white/10">
+                                  <button
+                                    type="button"
+                                    disabled={
+                                      index ===
+                                        0 ||
+                                      imageActionId !==
+                                        null
+                                    }
+                                    onClick={() =>
+                                      handleMoveExistingImage(
+                                        index,
+                                        "left",
+                                      )
+                                    }
+                                    className="flex items-center justify-center border-r border-white/10 p-2 text-slate-400 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                                    title="往前移"
+                                  >
+                                    <ChevronLeft className="h-4 w-4" />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={
+                                      index ===
+                                        existingImages.length -
+                                          1 ||
+                                      imageActionId !==
+                                        null
+                                    }
+                                    onClick={() =>
+                                      handleMoveExistingImage(
+                                        index,
+                                        "right",
+                                      )
+                                    }
+                                    className="flex items-center justify-center border-r border-white/10 p-2 text-slate-400 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                                    title="往後移"
+                                  >
+                                    <ChevronRight className="h-4 w-4" />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={
+                                      image.isCover ||
+                                      imageActionId !==
+                                        null
+                                    }
+                                    onClick={() =>
+                                      handleSetCover(
+                                        image,
+                                      )
+                                    }
+                                    className="flex items-center justify-center border-r border-white/10 p-2 text-yellow-400 transition hover:bg-yellow-500/10 disabled:cursor-not-allowed disabled:opacity-30"
+                                    title="設為封面"
+                                  >
+                                    <Star className="h-4 w-4" />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={
+                                      imageActionId !==
+                                      null
+                                    }
+                                    onClick={() =>
+                                      handleDeleteExistingImage(
+                                        image,
+                                      )
+                                    }
+                                    className="flex items-center justify-center p-2 text-red-400 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-30"
+                                    title="刪除圖片"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </div>
+                            ),
+                          )}
+                        </div>
+
+                        <p className="mt-2 text-xs leading-5 text-slate-500">
+                          左右箭頭可調整順序，星號可指定封面。
+                        </p>
+                      </FormField>
+                    )}
+
+                  <FormField label="新增商品圖片">
+                    <label
+                      className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed p-5 text-center text-sm transition ${
+                        compressing
+                          ? "cursor-wait border-blue-500/40 bg-blue-500/10 text-blue-300"
+                          : "border-white/20 bg-white/[0.03] text-slate-300 hover:border-blue-500/40 hover:bg-white/[0.06]"
+                      }`}
+                    >
+                      <ImagePlus className="h-7 w-7" />
+
+                      <span className="font-semibold">
+                        {compressing
+                          ? "圖片壓縮處理中..."
+                          : "選擇一張或多張圖片"}
+                      </span>
+
+                      <span className="text-xs leading-5 text-slate-500">
+                        支援 JPG、PNG、WebP
+                        <br />
+                        每張自動轉為
+                        WebP，最大 1600 ×
+                        1600
+                      </span>
+
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        multiple
+                        onChange={
+                          handleImagesChange
+                        }
+                        disabled={
+                          compressing ||
+                          saving
+                        }
+                        className="hidden"
+                      />
+                    </label>
+                  </FormField>
+
+                  {imageInfo && (
+                    <div className="rounded-xl border border-green-500/20 bg-green-500/10 p-3 text-sm leading-6 text-green-300">
+                      {imageInfo}
+                    </div>
+                  )}
+
+                  {imageError && (
+                    <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm leading-6 text-red-300">
+                      {imageError}
+                    </div>
+                  )}
+
+                  {pendingImages.length >
+                    0 && (
+                    <FormField
+                      label={`待上傳圖片（${pendingImages.length} 張）`}
+                    >
+                      <div className="grid grid-cols-2 gap-3">
+                        {pendingImages.map(
+                          (
+                            image,
+                            index,
+                          ) => (
+                            <div
+                              key={
+                                image.id
+                              }
+                              className={`overflow-hidden rounded-2xl border bg-black/30 ${
+                                pendingCoverId ===
+                                image.id
+                                  ? "border-yellow-400/60"
+                                  : "border-blue-500/20"
+                              }`}
+                            >
+                              <div className="relative aspect-square overflow-hidden bg-black">
+                                <img
+                                  src={
+                                    image.previewUrl
+                                  }
+                                  alt={`待上傳圖片 ${
+                                    index +
+                                    1
+                                  }`}
+                                  className="h-full w-full object-contain"
+                                />
+
+                                {pendingCoverId ===
+                                  image.id && (
+                                  <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-yellow-400 px-2 py-1 text-[10px] font-black text-black">
+                                    <Star className="h-3 w-3 fill-current" />
+                                    儲存後設為封面
+                                  </div>
+                                )}
+
+                                <div className="absolute bottom-2 right-2 rounded bg-black/70 px-2 py-1 text-[10px] text-white">
+                                  {formatFileSize(
+                                    image.compressedSize,
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-4 border-t border-white/10">
+                                <button
+                                  type="button"
+                                  disabled={
+                                    index ===
+                                    0
+                                  }
+                                  onClick={() =>
+                                    movePendingImage(
+                                      index,
+                                      "left",
+                                    )
+                                  }
+                                  className="flex items-center justify-center border-r border-white/10 p-2 text-slate-400 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                                  title="往前移"
+                                >
+                                  <ChevronLeft className="h-4 w-4" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  disabled={
+                                    index ===
+                                    pendingImages.length -
+                                      1
+                                  }
+                                  onClick={() =>
+                                    movePendingImage(
+                                      index,
+                                      "right",
+                                    )
+                                  }
+                                  className="flex items-center justify-center border-r border-white/10 p-2 text-slate-400 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                                  title="往後移"
+                                >
+                                  <ChevronRight className="h-4 w-4" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPendingCoverId(
+                                      image.id,
+                                    )
+                                  }
+                                  className={`flex items-center justify-center border-r border-white/10 p-2 transition ${
+                                    pendingCoverId ===
+                                    image.id
+                                      ? "bg-yellow-500/10 text-yellow-300"
+                                      : "text-yellow-400 hover:bg-yellow-500/10"
+                                  }`}
+                                  title="儲存後設為封面"
+                                >
+                                  <Star
+                                    className={`h-4 w-4 ${
+                                      pendingCoverId ===
+                                      image.id
+                                        ? "fill-current"
+                                        : ""
+                                    }`}
+                                  />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    removePendingImage(
+                                      image.id,
+                                    )
+                                  }
+                                  className="flex items-center justify-center p-2 text-red-400 transition hover:bg-red-500/10"
+                                  title="移除圖片"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
+                          ),
+                        )}
+                      </div>
+
+                      <p className="mt-2 text-xs leading-5 text-slate-500">
+                        圖片尚未上傳到
+                        Supabase，按下儲存商品後才會正式上傳。
+                      </p>
+                    </FormField>
+                  )}
+
+                  <FormField label="商品說明">
+                    <textarea
+                      rows={7}
+                      value={
+                        form.description
+                      }
+                      onChange={(
+                        event,
+                      ) =>
+                        setForm({
+                          ...form,
+
+                          description:
+                            event
+                              .target
+                              .value,
+                        })
+                      }
+                      className="admin-input resize-none"
+                      placeholder={`每行輸入一項商品特色
 
 例如：
 Intel Core i5
 16GB RAM
 512GB SSD
 一年保固`}
-                />
-              </FormField>
+                    />
+                  </FormField>
 
-              <button
-                type="submit"
-                disabled={
-                  compressing ||
-                  saving ||
-                  imageActionId !==
-                    null
-                }
-                className="primary-button w-full gap-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {editingId ===
-                null ? (
-                  <Plus className="h-4 w-4" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}
+                  <button
+                    type="submit"
+                    disabled={
+                      compressing ||
+                      saving ||
+                      imageActionId !==
+                        null
+                    }
+                    className="primary-button w-full gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {editingId ===
+                    null ? (
+                      <Plus className="h-4 w-4" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}
 
-                {saving
-                  ? pendingImages.length >
-                    0
-                    ? "商品與圖片儲存中..."
-                    : "商品儲存中..."
-                  : editingId ===
-                      null
-                    ? "新增商品"
-                    : "儲存修改"}
-              </button>
+                    {saving
+                      ? pendingImages.length >
+                        0
+                        ? "商品與圖片儲存中..."
+                        : "商品儲存中..."
+                      : editingId ===
+                          null
+                        ? "新增商品"
+                        : "儲存修改"}
+                  </button>
 
-              {editingId !==
-                null && (
+                  {editingId !==
+                    null && (
+                    <button
+                      type="button"
+                      onClick={
+                        cancelEdit
+                      }
+                      disabled={
+                        saving ||
+                        compressing
+                      }
+                      className="secondary-button w-full gap-2 disabled:opacity-50"
+                    >
+                      <X className="h-4 w-4" />
+                      取消編輯
+                    </button>
+                  )}
+                </form>
+
+                <div className="mt-6 rounded-2xl border border-green-500/20 bg-green-500/5 p-4 text-xs leading-6 text-green-200">
+                  商品資料儲存在
+                  Supabase Database。
+                  圖片會先在瀏覽器壓縮為
+                  WebP，再上傳至
+                  Supabase Storage。
+                  商品支援多張圖片、圖片排序與封面指定。
+                </div>
+              </aside>
+            </div>
+          </>
+        )}
+
+        {activeSection ===
+          "content" && (
+          <form
+            onSubmit={
+              saveCmsSettings
+            }
+            className="space-y-6"
+          >
+            <section className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-[#0b111d] p-6 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h2 className="text-2xl font-black">
+                  網站內容管理
+                </h2>
+
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  修改後儲存即可寫入
+                  Supabase。首頁重新整理後會直接讀取最新內容。
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
                 <button
                   type="button"
                   onClick={
-                    cancelEdit
+                    resetCmsChanges
                   }
                   disabled={
-                    saving ||
-                    compressing
+                    cmsSaving ||
+                    cmsDirtyCount ===
+                      0
                   }
-                  className="secondary-button w-full gap-2 disabled:opacity-50"
+                  className="secondary-button gap-2 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <X className="h-4 w-4" />
-                  取消編輯
+                  放棄變更
                 </button>
-              )}
-            </form>
 
-            <div className="mt-6 rounded-2xl border border-green-500/20 bg-green-500/5 p-4 text-xs leading-6 text-green-200">
-              商品資料儲存在
-              Supabase Database。
-              圖片會先在瀏覽器壓縮為
-              WebP，再上傳至
-              Supabase Storage。
-              商品支援多張圖片、圖片排序與封面指定。
+                <button
+                  type="submit"
+                  disabled={
+                    cmsSaving ||
+                    cmsDirtyCount ===
+                      0
+                  }
+                  className="primary-button gap-2 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Save className="h-4 w-4" />
+
+                  {cmsSaving
+                    ? "儲存中..."
+                    : cmsDirtyCount >
+                        0
+                      ? `儲存變更（${cmsDirtyCount}）`
+                      : "沒有待儲存變更"}
+                </button>
+              </div>
+            </section>
+
+            {groupedCmsSettings.map(
+              (group) => (
+                <section
+                  key={
+                    group.groupName
+                  }
+                  className="rounded-3xl border border-white/10 bg-[#0b111d] p-6"
+                >
+                  <div className="mb-6 border-b border-white/10 pb-4">
+                    <h3 className="text-xl font-black">
+                      {
+                        group.label
+                      }
+                    </h3>
+
+                    <p className="mt-1 text-xs text-slate-500">
+                      Supabase group：
+                      {
+                        group.groupName
+                      }
+                    </p>
+                  </div>
+
+                  <div className="grid gap-5 lg:grid-cols-2">
+                    {group.settings.map(
+                      (setting) => {
+                        const value =
+                          cmsValues[
+                            setting.key
+                          ] ?? "";
+
+                        const changed =
+                          value !==
+                          setting.value;
+
+                        return (
+                          <div
+                            key={
+                              setting.key
+                            }
+                            className={`rounded-2xl border p-4 transition ${
+                              changed
+                                ? "border-blue-500/40 bg-blue-500/[0.06]"
+                                : "border-white/10 bg-white/[0.02]"
+                            }`}
+                          >
+                            <div className="mb-2 flex items-start justify-between gap-3">
+                              <label
+                                htmlFor={`cms-${setting.key}`}
+                                className="text-sm font-semibold text-slate-200"
+                              >
+                                {
+                                  setting.label
+                                }
+                              </label>
+
+                              {changed && (
+                                <span className="shrink-0 rounded-full bg-blue-500/15 px-2 py-1 text-[10px] font-bold text-blue-300">
+                                  已修改
+                                </span>
+                              )}
+                            </div>
+
+                            {isMultilineSetting(
+                              setting.key,
+                            ) ? (
+                              <textarea
+                                id={`cms-${setting.key}`}
+                                rows={
+                                  4
+                                }
+                                value={
+                                  value
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  handleCmsValueChange(
+                                    setting.key,
+                                    event
+                                      .target
+                                      .value,
+                                  )
+                                }
+                                disabled={
+                                  cmsSaving
+                                }
+                                className="admin-input resize-y"
+                              />
+                            ) : (
+                              <input
+                                id={`cms-${setting.key}`}
+                                type={getSettingInputType(
+                                  setting.key,
+                                )}
+                                value={
+                                  value
+                                }
+                                onChange={(
+                                  event,
+                                ) =>
+                                  handleCmsValueChange(
+                                    setting.key,
+                                    event
+                                      .target
+                                      .value,
+                                  )
+                                }
+                                disabled={
+                                  cmsSaving
+                                }
+                                className="admin-input"
+                              />
+                            )}
+
+                            <div className="mt-2 break-all font-mono text-[10px] text-slate-600">
+                              {
+                                setting.key
+                              }
+                            </div>
+                          </div>
+                        );
+                      },
+                    )}
+                  </div>
+                </section>
+              ),
+            )}
+
+            <div className="sticky bottom-4 z-20 flex justify-end">
+              <button
+                type="submit"
+                disabled={
+                  cmsSaving ||
+                  cmsDirtyCount ===
+                    0
+                }
+                className="primary-button gap-2 shadow-2xl disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Save className="h-4 w-4" />
+
+                {cmsSaving
+                  ? "網站內容儲存中..."
+                  : cmsDirtyCount >
+                      0
+                    ? `儲存 ${cmsDirtyCount} 項變更`
+                    : "網站內容已同步"}
+              </button>
             </div>
-          </aside>
-        </div>
+          </form>
+        )}
+
+        {activeSection ===
+          "services" && (
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
+            <section className="overflow-hidden rounded-3xl border border-white/10 bg-[#0b111d]">
+              <div className="border-b border-white/10 p-6">
+                <h2 className="text-xl font-black">
+                  服務項目
+                </h2>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  前台只會顯示已啟用的服務，順序可用上下箭頭調整。
+                </p>
+              </div>
+
+              <div className="divide-y divide-white/10">
+                {siteServices.map(
+                  (
+                    service,
+                    index,
+                  ) => (
+                    <div
+                      key={
+                        service.id
+                      }
+                      className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-lg bg-white/[0.05] px-2 py-1 text-xs font-bold text-slate-400">
+                            #
+                            {index +
+                              1}
+                          </span>
+
+                          <h3 className="font-black">
+                            {
+                              service.title
+                            }
+                          </h3>
+
+                          <button
+                            type="button"
+                            disabled={
+                              serviceActionId !==
+                              null
+                            }
+                            onClick={() =>
+                              toggleServiceEnabled(
+                                service,
+                              )
+                            }
+                            className={
+                              service.isEnabled
+                                ? "rounded-full bg-green-500/15 px-3 py-1 text-xs font-bold text-green-400 transition hover:bg-green-500/25 disabled:opacity-40"
+                                : "rounded-full bg-slate-500/15 px-3 py-1 text-xs font-bold text-slate-400 transition hover:bg-slate-500/25 disabled:opacity-40"
+                            }
+                          >
+                            {service.isEnabled
+                              ? "啟用中"
+                              : "已停用"}
+                          </button>
+                        </div>
+
+                        <p className="mt-2 leading-6 text-slate-400">
+                          {
+                            service.description
+                          }
+                        </p>
+
+                        <div className="mt-2 text-xs text-slate-600">
+                          icon：
+                          {
+                            service.iconKey
+                          }
+                        </div>
+                      </div>
+
+                      <div className="flex shrink-0 gap-2">
+                        <button
+                          type="button"
+                          disabled={
+                            index ===
+                              0 ||
+                            serviceActionId !==
+                              null
+                          }
+                          onClick={() =>
+                            moveSiteService(
+                              index,
+                              "up",
+                            )
+                          }
+                          className="rounded-lg bg-white/5 p-2 text-slate-300 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
+                          title="往上移"
+                        >
+                          <ArrowUp className="h-4 w-4" />
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={
+                            index ===
+                              siteServices.length -
+                                1 ||
+                            serviceActionId !==
+                              null
+                          }
+                          onClick={() =>
+                            moveSiteService(
+                              index,
+                              "down",
+                            )
+                          }
+                          className="rounded-lg bg-white/5 p-2 text-slate-300 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-30"
+                          title="往下移"
+                        >
+                          <ArrowDown className="h-4 w-4" />
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={
+                            serviceActionId !==
+                            null
+                          }
+                          onClick={() =>
+                            startEditService(
+                              service,
+                            )
+                          }
+                          className="rounded-lg bg-blue-500/10 p-2 text-blue-400 transition hover:bg-blue-500/20 disabled:opacity-30"
+                          title="編輯服務"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={
+                            serviceActionId !==
+                            null
+                          }
+                          onClick={() =>
+                            handleDeleteSiteService(
+                              service,
+                            )
+                          }
+                          className="rounded-lg bg-red-500/10 p-2 text-red-400 transition hover:bg-red-500/20 disabled:opacity-30"
+                          title="刪除服務"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ),
+                )}
+
+                {siteServices.length ===
+                  0 && (
+                  <div className="p-10 text-center text-slate-500">
+                    目前尚無服務項目
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <aside className="h-fit rounded-3xl border border-white/10 bg-[#0b111d] p-6 xl:sticky xl:top-6">
+              <div className="mb-6 flex items-center gap-3">
+                {editingServiceId ===
+                null ? (
+                  <Plus className="text-blue-400" />
+                ) : (
+                  <Pencil className="text-blue-400" />
+                )}
+
+                <div>
+                  <h2 className="text-xl font-black">
+                    {editingServiceId ===
+                    null
+                      ? "新增服務"
+                      : "編輯服務"}
+                  </h2>
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    服務儲存後首頁重新整理即可看到最新內容
+                  </p>
+                </div>
+              </div>
+
+              <form
+                onSubmit={
+                  saveSiteService
+                }
+                className="space-y-5"
+              >
+                <FormField label="服務名稱">
+                  <input
+                    value={
+                      serviceForm.title
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setServiceForm({
+                        ...serviceForm,
+
+                        title:
+                          event
+                            .target
+                            .value,
+                      })
+                    }
+                    disabled={
+                      serviceSaving
+                    }
+                    className="admin-input"
+                    placeholder="例如：筆電維修"
+                  />
+                </FormField>
+
+                <FormField label="服務說明">
+                  <textarea
+                    rows={5}
+                    value={
+                      serviceForm.description
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setServiceForm({
+                        ...serviceForm,
+
+                        description:
+                          event
+                            .target
+                            .value,
+                      })
+                    }
+                    disabled={
+                      serviceSaving
+                    }
+                    className="admin-input resize-y"
+                    placeholder="請輸入服務內容說明"
+                  />
+                </FormField>
+
+                <FormField label="圖示">
+                  <select
+                    value={
+                      serviceForm.iconKey
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setServiceForm({
+                        ...serviceForm,
+
+                        iconKey:
+                          event
+                            .target
+                            .value,
+                      })
+                    }
+                    disabled={
+                      serviceSaving
+                    }
+                    className="admin-input"
+                  >
+                    {SERVICE_ICON_OPTIONS.map(
+                      (option) => (
+                        <option
+                          key={
+                            option.value
+                          }
+                          value={
+                            option.value
+                          }
+                        >
+                          {
+                            option.label
+                          }{" "}
+                          (
+                          {
+                            option.value
+                          }
+                          )
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </FormField>
+
+                <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                  <div>
+                    <div className="font-semibold">
+                      前台顯示
+                    </div>
+
+                    <div className="mt-1 text-xs text-slate-500">
+                      關閉後服務仍保留在後台，但一般訪客不會看到。
+                    </div>
+                  </div>
+
+                  <input
+                    type="checkbox"
+                    checked={
+                      serviceForm.isEnabled
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setServiceForm({
+                        ...serviceForm,
+
+                        isEnabled:
+                          event
+                            .target
+                            .checked,
+                      })
+                    }
+                    disabled={
+                      serviceSaving
+                    }
+                    className="h-5 w-5 accent-blue-500"
+                  />
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={
+                    serviceSaving
+                  }
+                  className="primary-button w-full gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {editingServiceId ===
+                  null ? (
+                    <Plus className="h-4 w-4" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+
+                  {serviceSaving
+                    ? "儲存中..."
+                    : editingServiceId ===
+                        null
+                      ? "新增服務"
+                      : "儲存修改"}
+                </button>
+
+                {editingServiceId !==
+                  null && (
+                  <button
+                    type="button"
+                    onClick={
+                      resetServiceForm
+                    }
+                    disabled={
+                      serviceSaving
+                    }
+                    className="secondary-button w-full gap-2 disabled:opacity-50"
+                  >
+                    <X className="h-4 w-4" />
+                    取消編輯
+                  </button>
+                )}
+              </form>
+            </aside>
+          </div>
+        )}
       </div>
 
       <style jsx global>{`
@@ -2241,6 +3773,11 @@ Intel Core i5
             );
         }
 
+        .admin-input:disabled {
+          cursor: not-allowed;
+          opacity: 0.55;
+        }
+
         .admin-input option {
           background: #0b111d;
         }
@@ -2250,6 +3787,52 @@ Intel Core i5
         }
       `}</style>
     </main>
+  );
+}
+
+function AdminTab({
+  active,
+  onClick,
+  icon,
+  title,
+  description,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-4 rounded-2xl border p-4 text-left transition ${
+        active
+          ? "border-blue-500/40 bg-blue-500/10"
+          : "border-transparent bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.05]"
+      }`}
+    >
+      <div
+        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
+          active
+            ? "bg-blue-500/15 text-blue-300"
+            : "bg-white/5 text-slate-400"
+        }`}
+      >
+        {icon}
+      </div>
+
+      <div>
+        <div className="font-black">
+          {title}
+        </div>
+
+        <div className="mt-1 text-xs text-slate-500">
+          {description}
+        </div>
+      </div>
+    </button>
   );
 }
 

@@ -16,6 +16,7 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  BarChart3,
   Boxes,
   ChevronLeft,
   ChevronRight,
@@ -2246,7 +2247,7 @@ export default function AdminPage() {
             </h1>
 
             <p className="mt-2 text-slate-400">
-              商品、網站內容與服務項目皆由
+              商品、網站內容、服務項目與瀏覽統計由
               Supabase 管理
             </p>
           </div>
@@ -2271,7 +2272,7 @@ export default function AdminPage() {
           </div>
         </header>
 
-        <section className="mb-6 grid gap-3 rounded-3xl border border-white/10 bg-[#0b111d] p-3 sm:grid-cols-3">
+        <section className="mb-6 grid gap-3 rounded-3xl border border-white/10 bg-[#0b111d] p-3 sm:grid-cols-2 xl:grid-cols-4">
           <AdminTab
             active={
               activeSection ===
@@ -2322,7 +2323,25 @@ export default function AdminPage() {
             title="服務項目"
             description="新增、修改、排序與停用服務"
           />
-        </section>
+                  <Link
+            href="/admin/analytics/"
+            className="flex items-center gap-4 rounded-2xl border border-transparent bg-white/[0.02] p-4 text-left transition hover:border-white/10 hover:bg-white/[0.05]"
+          >
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/5 text-slate-400">
+              <BarChart3 className="h-5 w-5" />
+            </div>
+
+            <div>
+              <div className="font-black">
+                網站瀏覽統計
+              </div>
+
+              <div className="mt-1 text-xs text-slate-500">
+                今日、近 7 天、近 30 天與熱門頁面
+              </div>
+            </div>
+          </Link>
+</section>
 
         {pageError && (
           <div className="mb-6 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">

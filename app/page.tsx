@@ -504,6 +504,10 @@ export default function HomePage() {
               siteSettings.services_title
             }
           </h2>
+
+          <p className="mt-4 max-w-3xl leading-7 text-slate-300">
+            鈦鼎資訊提供桃園地區的電腦維修、筆電故障檢測及客製化電腦組裝，也可洽詢 Windows 重灌、SSD 與記憶體升級。可透過 LINE 提供電腦型號與故障狀況，詢問報價及到府服務範圍。
+          </p>
         </div>
 
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">

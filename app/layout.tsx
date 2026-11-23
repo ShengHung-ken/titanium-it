@@ -4,11 +4,11 @@ import "./globals.css";
 const siteUrl =
   "https://titaniumit.rweb.site/";
 
-const siteName =
-  "鈦鼎資訊 | Titanium IT";
+const siteTitle =
+  "桃園電腦維修、筆電維修與電腦組裝｜鈦鼎資訊";
 
 const siteDescription =
-  "鈦鼎資訊提供電腦維修、客製化組裝、硬體升級、系統重灌、零組件、筆電與周邊設備服務。";
+  "鈦鼎資訊提供桃園地區桌機與筆電故障檢測、客製化電腦組裝、Windows 重灌及硬體升級。歡迎透過 LINE 洽詢維修、報價與到府服務範圍。";
 
 const logoUrl =
   "https://titaniumit.rweb.site/logo-titanium.png";
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
 
   title: {
-    default: siteName,
+    default: siteTitle,
     template: `%s | 鈦鼎資訊`,
   },
 
@@ -81,7 +81,7 @@ export const metadata: Metadata = {
     siteName:
       "鈦鼎資訊 Titanium IT",
 
-    title: siteName,
+    title: siteTitle,
 
     description: siteDescription,
 
@@ -98,7 +98,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
 
-    title: siteName,
+    title: siteTitle,
 
     description: siteDescription,
 
@@ -148,8 +148,8 @@ const structuredData = [
       siteDescription,
 
     areaServed: {
-      "@type": "Country",
-      name: "Taiwan",
+      "@type": "City",
+      name: "桃園市",
     },
 
     contactPoint: {
